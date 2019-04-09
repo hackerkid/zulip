@@ -3,7 +3,7 @@
 # See CircleCI upstream's docs on this config format:
 #   https://circleci.com/docs/2.0/language-python/
 #
-version: 2.1
+version: 2.0
 aliases:
   - &create_cache_directories
     run:
