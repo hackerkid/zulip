@@ -1149,6 +1149,10 @@ def export_uploads_and_avatars(realm: Realm, output_dir: Path) -> None:
                              settings.S3_AVATAR_BUCKET,
                              output_dir=emoji_output_dir,
                              processing_emoji=True)
+        export_files_from_s3(realm,
+                             settings.S3_AVATAR_BUCKET,
+                             output_dir=avatars_output_dir,
+                             processing_realm_icon_and_logo=True)
 
 def _check_key_metadata(email_gateway_bot: Optional[UserProfile],
                         key: Key, processing_avatars: bool,
@@ -1214,8 +1218,8 @@ def _save_s3_object_to_file(
     key.get_contents_to_filename(filename)
 
 def export_files_from_s3(realm: Realm, bucket_name: str, output_dir: Path,
-                         processing_avatars: bool=False,
-                         processing_emoji: bool=False) -> None:
+                         processing_avatars: bool=False, processing_emoji: bool=False,
+                         processing_realm_icon_and_logo: bool=False) -> None:
     conn = S3Connection(settings.S3_KEY, settings.S3_SECRET_KEY)
     bucket = conn.get_bucket(bucket_name, validate=True)
     records = []
@@ -1231,7 +1235,10 @@ def export_files_from_s3(realm: Realm, bucket_name: str, output_dir: Path,
             avatar_hash_values.add(avatar_path)
             avatar_hash_values.add(avatar_path + ".original")
             user_ids.add(user_profile.id)
-    if processing_emoji:
+
+    if processing_realm_icon_and_logo:
+        bucket_list = bucket.list(prefix="%s/realm/" % (realm.id,))
+    elif processing_emoji:
         bucket_list = bucket.list(prefix="%s/emoji/images/" % (realm.id,))
     else:
         bucket_list = bucket.list(prefix="%s/" % (realm.id,))
