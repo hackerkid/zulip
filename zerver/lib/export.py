@@ -1151,7 +1151,7 @@ def export_uploads_and_avatars(realm: Realm, output_dir: Path) -> None:
                              processing_emoji=True)
         export_files_from_s3(realm,
                              settings.S3_AVATAR_BUCKET,
-                             output_dir=avatars_output_dir,
+                             output_dir=realm_icons_output_dir,
                              processing_realm_icon_and_logo=True)
 
 def _check_key_metadata(email_gateway_bot: Optional[UserProfile],
@@ -1186,13 +1186,16 @@ def _get_exported_s3_record(
         record['file_name'] = os.path.basename(key.name)
 
     # A few early avatars don't have 'realm_id' on the object; fix their metadata
-    user_profile = get_user_profile_by_id(record['user_profile_id'])
-    if 'realm_id' not in record:
-        record['realm_id'] = user_profile.realm_id
-    record['user_profile_email'] = user_profile.email
+    if "user_profile_id" in record:
+        user_profile = get_user_profile_by_id(record['user_profile_id'])
+        record['user_profile_email'] = user_profile.email
 
-    # Fix the record ids
-    record['user_profile_id'] = int(record['user_profile_id'])
+        # Fix the record ids
+        record['user_profile_id'] = int(record['user_profile_id'])
+
+        if 'realm_id' not in record:
+            record['realm_id'] = user_profile.realm_id
+
     record['realm_id'] = int(record['realm_id'])
 
     return record
