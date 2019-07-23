@@ -572,13 +572,15 @@ def bulk_import_client(data: TableData, model: Any, table: TableName) -> None:
         update_id_map(table='client', old_id=item['id'], new_id=client.id)
 
 def import_uploads(import_dir: Path, processes: int, processing_avatars: bool=False,
-                   processing_emojis: bool=False) -> None:
+                   processing_emojis: bool=False, processing_realm_icons: bool=False) -> None:
     if processing_avatars and processing_emojis:
         raise AssertionError("Cannot import avatars and emojis at the same time!")
     if processing_avatars:
         logging.info("Importing avatars")
     elif processing_emojis:
         logging.info("Importing emojis")
+    elif processing_realm_icons:
+        logging.info("Processing realm icons and logos")
     else:
         logging.info("Importing uploaded files")
 
@@ -589,7 +591,7 @@ def import_uploads(import_dir: Path, processes: int, processing_avatars: bool=Fa
 
     re_map_foreign_keys_internal(records, 'records', 'realm_id', related_table="realm",
                                  id_field=True)
-    if not processing_emojis:
+    if not processing_emojis and not processing_realm_icons:
         re_map_foreign_keys_internal(records, 'records', 'user_profile_id',
                                      related_table="user_profile", id_field=True)
 
@@ -622,6 +624,9 @@ def import_uploads(import_dir: Path, processes: int, processing_avatars: bool=Fa
             relative_path = RealmEmoji.PATH_ID_TEMPLATE.format(
                 realm_id=record['realm_id'],
                 emoji_file_name=record['file_name'])
+            record['last_modified'] = timestamp
+        elif processing_realm_icons:
+            relative_path = os.path.join(str(record['realm_id']), "realm", record["file_name"])
             record['last_modified'] = timestamp
         else:
             # Should be kept in sync with its equivalent in zerver/lib/uploads in the
@@ -665,7 +670,7 @@ def import_uploads(import_dir: Path, processes: int, processing_avatars: bool=Fa
 
             key.set_contents_from_filename(os.path.join(import_dir, record['path']), headers=headers)
         else:
-            if processing_avatars or processing_emojis:
+            if processing_avatars or processing_emojis or processing_realm_icons:
                 file_path = os.path.join(settings.LOCAL_UPLOADS_DIR, "avatars", relative_path)
             else:
                 file_path = os.path.join(settings.LOCAL_UPLOADS_DIR, "files", relative_path)
@@ -967,6 +972,9 @@ def do_import_realm(import_dir: Path, subdomain: str, processes: int=1) -> Realm
     # For Zulip export, this doesn't exist
     if os.path.exists(os.path.join(import_dir, "emoji")):
         import_uploads(os.path.join(import_dir, "emoji"), processes, processing_emojis=True)
+
+    if os.path.exists(os.path.join(import_dir, "realm_icons")):
+        import_uploads(os.path.join(import_dir, "realm_icons"), processes, processing_realm_icons=True)
 
     sender_map = {
         user['id']: user
