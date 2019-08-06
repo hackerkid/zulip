@@ -986,12 +986,12 @@ def fetch_mirror_dummy_users(user_list: List[ZerverFieldsT], slack_data_dir: str
         mirror_dummy_user_ids.add(user_id)
 
     for user_id in mirror_dummy_user_ids:
-        user_info_api_url = "https://slack.com/api/users.info?user={}".format(user_id)
-        user = get_slack_api_data(token, user_info_api_url, "user")
+        user_info_api_url = "https://slack.com/api/users.info?token={}&user={}".format(token, user_id)
+        user = get_slack_api_data(user_info_api_url, "user")
         team_id = user["team_id"]
         if team_id not in team_id_to_domain:
-            team_info_api_url = "https://slack.com/api/team.info?team={}".format(team_id)
-            team = get_slack_api_data(token, team_info_api_url, "team")
+            team_info_api_url = "https://slack.com/api/team.info?token={}&team={}".format(token, team_id)
+            team = get_slack_api_data(team_info_api_url, "team")
             team_id_to_domain[team_id] = team["domain"]
         user["team_domain"] = team_id_to_domain[team_id]
         user["is_mirror_dummy"] = True
@@ -1018,11 +1018,11 @@ def do_convert_data(slack_zip_file: str, output_dir: str, token: str, threads: i
 
     # We get the user data from the legacy token method of slack api, which is depreciated
     # but we use it as the user email data is provided only in this method
-    user_list = get_slack_api_data(token, "https://slack.com/api/users.list", "members")
+    user_list = get_slack_api_data("https://slack.com/api/users.list?token={}".format(token), "members")
     fetch_mirror_dummy_users(user_list, slack_data_dir, token)
 
     # Get custom emoji from slack api
-    custom_emoji_list = get_slack_api_data(token, "https://slack.com/api/emoji.list", "emoji")
+    custom_emoji_list = get_slack_api_data("https://slack.com/api/emoji.list?token={}".format(token), "emoji")
 
     realm, added_users, added_recipient, added_channels, added_mpims, dm_members, avatar_list, \
         emoji_url_map = slack_workspace_to_realm(domain_name, realm_id, user_list,
@@ -1073,8 +1073,8 @@ def get_data_file(path: str) -> Any:
         data = ujson.load(fp)
         return data
 
-def get_slack_api_data(token: str, slack_api_url: str, get_param: str) -> Any:
-    data = requests.get('%s?token=%s' % (slack_api_url, token))
+def get_slack_api_data(slack_api_url: str, get_param: str) -> Any:
+    data = requests.get(slack_api_url)
     if data.status_code == requests.codes.ok:
         if 'error' in data.json():
             raise Exception('Enter a valid token!')
