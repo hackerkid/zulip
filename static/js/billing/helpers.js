@@ -33,10 +33,11 @@ exports.create_ajax_request = function (url, form_name, stripe_token = null) {
     $.post({
         url: url,
         data: data,
-        success: function () {
+        success: function (result) {
             $(form_loading).hide();
             $(form_error).hide();
             $(form_success).show();
+            console.log(result)
             if (_.contains(["autopay", "invoice"], form_name)) {
                 if ("pushState" in history) {
                     history.pushState("", document.title, location.pathname + location.search);

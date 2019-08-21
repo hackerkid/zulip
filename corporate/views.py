@@ -146,6 +146,23 @@ def initial_upgrade(request: HttpRequest) -> HttpResponse:
     response = render(request, 'corporate/upgrade.html', context=context)
     return response
 
+def new_upgrade(request: HttpRequest, user) -> None:
+    session = stripe.checkout.Session.create(
+        payment_method_types=['card'],
+        line_items=[{
+            "name": 'Zulip Standard',
+            "description": "Upgrade to Zulip Standard, ${} x {}".format(price_per_license/100, licenses),
+            #"amount": price_per_license * licenses,
+            #customer
+            "amount": 500,
+            "currency": 'usd',
+            "quantity": 1,
+        }],
+        success_url='https://example.com/success',
+        cancel_url='https://example.com/cancel'
+    )
+    return json_success({"session_id": session.id})
+
 @zulip_login_required
 def billing_home(request: HttpRequest) -> HttpResponse:
     user = request.user

@@ -293,13 +293,6 @@ def process_initial_upgrade(user: UserProfile, licenses: int, automanage_license
     # adjust the number of licenses.
     charge_automatically = stripe_token is not None
     if charge_automatically:
-        stripe_charge = stripe.Charge.create(
-            amount=price_per_license * licenses,
-            currency='usd',
-            customer=customer.stripe_customer_id,
-            description="Upgrade to Zulip Standard, ${} x {}".format(price_per_license/100, licenses),
-            receipt_email=user.email,
-            statement_descriptor='Zulip Standard')
         # Not setting a period start and end, but maybe we should? Unclear what will make things
         # most similar to the renewal case from an accounting perspective.
         stripe.InvoiceItem.create(

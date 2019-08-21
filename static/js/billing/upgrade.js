@@ -36,7 +36,7 @@ exports.initialize = () => {
             return;
         }
         e.preventDefault();
-        helpers.create_ajax_request("/json/billing/upgrade", "invoice");
+        helpers.create_ajax_request("/json/billing/newupgrade", "invoice");
     });
 
     var prices = {};
