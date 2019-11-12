@@ -32,6 +32,15 @@ const plugin_stub = {
 
 zrequire('upload');
 
+run_test('make_upload_absolute', () => {
+    let uri = "/user_uploads/5/d4/6lSlfIPIg9nDI2Upj0Mq_EbE/kerala.png";
+    const expected_uri = "https://foo.com/user_uploads/5/d4/6lSlfIPIg9nDI2Upj0Mq_EbE/kerala.png";
+    assert.equal(upload.make_upload_absolute(uri), expected_uri);
+
+    uri = "https://foo.com/user_uploads/5/d4/6lSlfIPIg9nDI2Upj0Mq_EbE/alappuzha.png";
+    assert.equal(upload.make_upload_absolute(uri), uri);
+});
+
 run_test('get_item', () => {
     assert.equal(upload.get_item("textarea", {mode: "compose"}), $('#compose-textarea'));
     assert.equal(upload.get_item("send_status_message", {mode: "compose"}), $('#compose-error-msg'));

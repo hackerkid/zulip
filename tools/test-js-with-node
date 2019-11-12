@@ -82,6 +82,7 @@ enforce_fully_covered = {
     'static/js/typeahead_helper.js',
     'static/js/typing_data.js',
     'static/js/unread.js',
+    'static/js/upload.js',
     'static/js/user_events.js',
     'static/js/user_groups.js',
     'static/js/user_pill.js',
