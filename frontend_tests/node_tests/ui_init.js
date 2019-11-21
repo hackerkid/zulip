@@ -144,7 +144,7 @@ page_params.unread_msgs = {};
 page_params.recent_private_conversations = [];
 
 $('#tab_bar').append = () => {};
-$('#compose').filedrop = () => {};
+upload.setup_upload = () => {};
 
 server_events.home_view_loaded = () => true;
 
