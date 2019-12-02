@@ -13,6 +13,9 @@ from zerver.lib.queue import queue_json_publish
 from zerver.lib.send_email import FromAddress
 from zerver.models import UserProfile
 from zerver.lib.timezone import get_timezone
+from zerver.lib.upload import upload_message_file
+
+from django_tus.signals import tus_upload_finished_signal
 
 JUST_CREATED_THRESHOLD = 60
 
@@ -99,3 +102,17 @@ def email_on_new_login(sender: Any, user: UserProfile, request: Any, **kwargs: A
             'from_address': FromAddress.NOREPLY,
             'context': context}
         queue_json_publish("email_senders", email_dict)
+
+@receiver(tus_upload_finished_signal, dispatch_uid="only_on_upload_complete")
+def tus_upload_complete(sender: Any, **kwargs: Any) -> None:
+    metadata = kwargs["metadata"]
+    resource_id = kwargs["resource_id"]
+    file_size = kwargs["file_size"]
+    user_profile = kwargs["request"].user
+    destination_file_path = kwargs["destination_file_path"]
+    file_name = metadata["name"] or metadata["filename"]
+    content_type = metadata["type"] or metadata["filetype"]
+
+    with open(destination_file_path, "r+b") as user_file:
+        upload_message_file(file_name, file_size, content_type, user_file.read(),
+                            user_profile, path=resource_id)

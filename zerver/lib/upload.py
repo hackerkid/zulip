@@ -207,7 +207,8 @@ class ZulipUploadBackend:
     def upload_message_file(self, uploaded_file_name: str, uploaded_file_size: int,
                             content_type: Optional[str], file_data: bytes,
                             user_profile: UserProfile,
-                            target_realm: Optional[Realm]=None) -> str:
+                            target_realm: Optional[Realm]=None,
+                            path: Optional[str]=None) -> str:
         raise NotImplementedError()
 
     def upload_avatar_image(self, user_file: File,
@@ -357,7 +358,8 @@ class S3UploadBackend(ZulipUploadBackend):
 
     def upload_message_file(self, uploaded_file_name: str, uploaded_file_size: int,
                             content_type: Optional[str], file_data: bytes,
-                            user_profile: UserProfile, target_realm: Optional[Realm]=None) -> str:
+                            user_profile: UserProfile, target_realm: Optional[Realm]=None,
+                            path: Optional[str]=None) -> str:
         bucket_name = settings.S3_AUTH_UPLOADS_BUCKET
         if target_realm is None:
             target_realm = user_profile.realm
@@ -657,18 +659,25 @@ def get_local_file_path(path_id: str) -> Optional[str]:
     else:
         return None
 
+def tus_resource_id_generator(file_name: str, request: HttpRequest) -> str:
+    return generate_file_path(file_name, request.user.realm.id)
+
+def generate_file_path(file_name: str, realm_id: int) -> str:
+    return "/".join([
+        str(realm_id),
+        format(random.randint(0, 255), 'x'),
+        random_name(18),
+        sanitize_name(file_name)
+    ])
+
 class LocalUploadBackend(ZulipUploadBackend):
     def upload_message_file(self, uploaded_file_name: str, uploaded_file_size: int,
                             content_type: Optional[str], file_data: bytes,
-                            user_profile: UserProfile, target_realm: Optional[Realm]=None) -> str:
+                            user_profile: UserProfile, target_realm: Optional[Realm]=None,
+                            path: Optional[str]=None) -> str:
         # Split into 256 subdirectories to prevent directories from getting too big
-        path = "/".join([
-            str(user_profile.realm_id),
-            format(random.randint(0, 255), 'x'),
-            random_name(18),
-            sanitize_name(uploaded_file_name)
-        ])
-
+        if path is None:
+            path = generate_file_path(uploaded_file_name, user_profile.realm.id)
         write_local_file('files', path, file_data)
         create_attachment(uploaded_file_name, path, user_profile, uploaded_file_size)
         return '/user_uploads/' + path
@@ -861,10 +870,11 @@ def upload_emoji_image(emoji_file: File, emoji_file_name: str, user_profile: Use
 
 def upload_message_file(uploaded_file_name: str, uploaded_file_size: int,
                         content_type: Optional[str], file_data: bytes,
-                        user_profile: UserProfile, target_realm: Optional[Realm]=None) -> str:
+                        user_profile: UserProfile, target_realm: Optional[Realm]=None,
+                        path: Optional[str]=None) -> str:
     return upload_backend.upload_message_file(uploaded_file_name, uploaded_file_size,
                                               content_type, file_data, user_profile,
-                                              target_realm=target_realm)
+                                              target_realm=target_realm, path=path)
 
 def claim_attachment(user_profile: UserProfile,
                      path_id: str,
@@ -880,6 +890,7 @@ def create_attachment(file_name: str, path_id: str, user_profile: UserProfile,
                       file_size: int) -> bool:
     attachment = Attachment.objects.create(file_name=file_name, path_id=path_id, owner=user_profile,
                                            realm=user_profile.realm, size=file_size)
+    print("create attachment ", path_id)
     from zerver.lib.actions import notify_attachment_update
     notify_attachment_update(user_profile, 'add', attachment.to_dict())
     return True

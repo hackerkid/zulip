@@ -1,6 +1,6 @@
 const Uppy = require('@uppy/core');
-const XHRUpload = require('@uppy/xhr-upload');
 const ProgressBar = require('@uppy/progress-bar');
+const Tus = require('@uppy/tus');
 
 exports.make_upload_absolute = function (uri) {
     if (uri.indexOf(compose.uploads_path) === 0) {
@@ -8,6 +8,12 @@ exports.make_upload_absolute = function (uri) {
         return compose.uploads_domain + uri;
     }
     return uri;
+};
+
+exports.get_upload_uri_from_tus_uri = function (uri) {
+    const tus_uri_prefix = compose.uploads_domain + "/json/tus_upload";
+    const upload_uri_prefix = compose.uploads_domain + "/user_uploads";
+    return uri.replace(tus_uri_prefix, upload_uri_prefix);
 };
 
 // Show the upload button only if the browser supports it.
@@ -142,20 +148,12 @@ exports.setup_upload = function (config) {
     uppy.setMeta({
         csrfmiddlewaretoken: csrf_token,
     });
-    uppy.use(
-        XHRUpload, {
-            endpoint: '/json/user_uploads',
-            formData: true,
-            fieldName: 'file',
-            // Number of concurrent uploads
-            limit: 5,
-            locale: {
-                strings: {
-                    timedOut: i18n.t('Upload stalled for %{seconds} seconds, aborting.'),
-                },
-            },
-        }
-    );
+    uppy.use(Tus, {
+        endpoint: '/json/tus_upload/',
+        resume: true,
+        autoRetry: true,
+        retryDelays: [0, 1000, 3000, 5000],
+    });
 
     uppy.use(ProgressBar, {
         target: exports.get_item("send_status_identifier", config),
@@ -195,17 +193,17 @@ exports.setup_upload = function (config) {
     });
 
     uppy.on('upload-success', (file, response) => {
-        const uri = response.body.uri;
-        if (uri === undefined) {
+        const tus_uri = response.uploadURL;
+        if (tus_uri === undefined) {
             return;
         }
-        const split_uri = uri.split("/");
+        const upload_uri = exports.get_upload_uri_from_tus_uri(tus_uri);
+        const split_uri = upload_uri.split("/");
         const filename = split_uri[split_uri.length - 1];
         if (!compose_state.composing()) {
             compose_actions.start('stream');
         }
-        const absolute_uri = upload.make_upload_absolute(uri);
-        const filename_uri = "[" + filename + "](" + absolute_uri + ")";
+        const filename_uri = "[" + filename + "](" + upload_uri + ")";
         compose_ui.replace_syntax("[Uploading " + file.name + "…]()", filename_uri, exports.get_item("textarea", config));
         compose_ui.autosize_textarea();
     });

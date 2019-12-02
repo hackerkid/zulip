@@ -166,3 +166,5 @@ USE_X_FORWARDED_PORT = True
 
 # Override the default SAML entity ID
 SOCIAL_AUTH_SAML_SP_ENTITY_ID = "http://localhost:9991/"
+TUS_UPLOAD_DIR = "var/tus/temp"
+TUS_DESTINATION_DIR = "var/tus/uploads"

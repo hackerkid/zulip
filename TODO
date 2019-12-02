@@ -1,0 +1,11 @@
+* Make URL regex properly
+* Fix redundant file copy read
+* Rethink whether sharing the filepath during resource generation to client is the right thing to do.
+* Handle reattempt UI gracefully
+* Add file validation before file uploads start
+
+Follow Up issues
+--------------
+### Upload continues even after pressing escape button.
+In hotkey.js line 221
+

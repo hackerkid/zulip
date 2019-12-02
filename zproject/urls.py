@@ -5,12 +5,13 @@ from django.http import HttpResponseBadRequest, HttpRequest, HttpResponse
 from django.views.generic import TemplateView, RedirectView
 from django.utils.module_loading import import_string
 import os
+from django_tus.views import TusUpload
 import zerver.forms
 from zproject import dev_urls
 from zproject.legacy_urls import legacy_urls
 from zerver.views.documentation import IntegrationView, MarkdownDirectoryView
 from zerver.lib.integrations import WEBHOOK_INTEGRATIONS
-
+from zerver.lib.upload import tus_resource_id_generator
 
 from django.contrib.auth.views import (login, password_reset_done,
                                        password_reset_confirm, password_reset_complete)
@@ -235,7 +236,8 @@ v1_api_and_json_patterns = [
     # user_uploads -> zerver.views.upload
     url(r'^user_uploads$', rest_dispatch,
         {'POST': 'zerver.views.upload.upload_file_backend'}),
-
+    url(r'^tus_upload/$', TusUpload.as_view(resource_id_generator=tus_resource_id_generator), name='tus_upload'),
+    url(r'^tus_upload/(?P<resource_id>.+)$', TusUpload.as_view(resource_id_generator=tus_resource_id_generator), name='tus_upload_chunks'),
     # bot_storage -> zerver.views.storage
     url(r'^bot_storage$', rest_dispatch,
         {'PUT': 'zerver.views.storage.update_storage',
