@@ -275,6 +275,11 @@ if [ "$DEPLOYMENT_TYPE" = "dockervoyager" ]; then
     has_postgres=1
 fi
 
+if [ "$DEPLOYMENT_TYPE" = "rdsvoyager" ]; then
+    has_postgres=1
+    export ZULIP_POSTGRES_DICTIONARIES_UNAVAILABLE="true"
+fi
+
 # These server restarting bits should be moveable into puppet-land, ideally
 apt-get -y upgrade
 
