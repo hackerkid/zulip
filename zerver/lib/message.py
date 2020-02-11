@@ -538,9 +538,9 @@ def access_message(user_profile: UserProfile, message_id: int) -> Tuple[Message,
 
 def has_message_access(user_profile: UserProfile, message: Message,
                        user_message: Optional[UserMessage]) -> bool:
-    if user_message is None:
+    if user_message is None and message.sender != user_profile:
         if message.recipient.type != Recipient.STREAM:
-            # You can't access private messages you didn't receive
+            # You can't access private messages you didn't send or receive
             return False
 
         stream = Stream.objects.get(id=message.recipient.type_id)
@@ -549,7 +549,7 @@ def has_message_access(user_profile: UserProfile, message: Message,
             return False
 
         if not stream.is_history_public_to_subscribers():
-            # You can't access messages you didn't directly receive
+            # You can't access messages you didn't directly send or receive
             # unless history is public to subscribers.
             return False
 
