@@ -259,6 +259,10 @@ def main() -> None:
                         action="store_true",
                         default=False,
                         help=("Include webhook tests.  By default, they are skipped for performance."))
+    parser.add_argument('--generate-stripe-fixtures', dest="generate_stripe_fixtures",
+                        action="store_true",
+                        default=False,
+                        help=("Generate Stripe fixtures by making actual requests to Stripe test network"))
     parser.add_argument('args', nargs='*')
 
     options = parser.parse_args()
@@ -343,6 +347,12 @@ def main() -> None:
 
     if full_suite and include_webhooks:
         suites.append("zerver.webhooks")
+
+    if options.generate_stripe_fixtures:
+        suites = [
+            "corporate.tests.test_stripe",
+        ]
+        os.environ["GENERATE_STRIPE_FIXTURES"] = "1"
 
     assert_provisioning_status_ok(options.force)
 

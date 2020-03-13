@@ -14,6 +14,7 @@ from django.core import signing
 from django.urls.resolvers import get_resolver
 from django.http import HttpResponse
 from django.utils.timezone import utc as timezone_utc
+from django.conf import settings
 
 import stripe
 
@@ -35,7 +36,6 @@ from corporate.models import Customer, CustomerPlan, LicenseLedger
 
 CallableT = TypeVar('CallableT', bound=Callable[..., Any])
 
-GENERATE_STRIPE_FIXTURES = False
 STRIPE_FIXTURES_DIR = "corporate/tests/stripe_fixtures"
 
 # TODO: check that this creates a token similar to what is created by our
@@ -183,7 +183,7 @@ def mock_stripe(tested_timestamp_fields: List[str]=[],
     def _mock_stripe(decorated_function: CallableT) -> CallableT:
         generate_fixture = generate
         if generate_fixture is None:
-            generate_fixture = GENERATE_STRIPE_FIXTURES
+            generate_fixture = settings.GENERATE_STRIPE_FIXTURES
         for mocked_function_name in MOCKED_STRIPE_FUNCTION_NAMES:
             mocked_function = operator.attrgetter(mocked_function_name)(sys.modules[__name__])
             if generate_fixture:
