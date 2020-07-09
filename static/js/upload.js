@@ -47,11 +47,13 @@ exports.get_item = function (key, config) {
                 return "compose-file-input";
             case "drag_drop_container":
                 return $("#compose");
+            case "main_container":
+                return $("#main_div");
             default:
                 throw Error(`Invalid key name for mode "${config.mode}"`);
         }
     } else if (config.mode === "edit") {
-        if (!config.row) {
+        if (!["source", "drag_drop_container", "main_container"].includes(key) && !config.row) {
             throw Error("Missing row in config");
         }
         switch (key) {
@@ -75,6 +77,8 @@ exports.get_item = function (key, config) {
                 return "message-edit-file-input";
             case "drag_drop_container":
                 return $(".message_edit_form");
+            case "main_container":
+                return $("#main_div");
             default:
                 throw Error(`Invalid key name for mode "${config.mode}"`);
         }
@@ -221,6 +225,40 @@ exports.setup_upload = function (config) {
             files.push(file);
         }
         exports.upload_files(uppy, config, files);
+    });
+
+    const main_container = exports.get_item("main_container", config);
+    main_container.on("dragover", (event) => event.preventDefault());
+    main_container.on("dragenter", (event) => event.preventDefault());
+
+    main_container.on("drop", (event) => {
+        event.preventDefault();
+
+        const drag_drop_edit_containers = exports.get_item("drag_drop_container", {mode: "edit"});
+        for (const container of drag_drop_edit_containers) {
+            if (container.contains(event.target)) {
+                return;
+            }
+        }
+
+        // If no compose boxes are open the upload goes to the main compose box.
+        // If compose box and edit box(es) are both open, the upload goes to main compose box.
+        // If only edit message boxes are open, the upload goes to the edit box at the bottom.
+        const last_drag_drop_edit_container = drag_drop_edit_containers.last();
+        if (compose_state.composing()) {
+            if (config.mode === "edit") {
+                return;
+            }
+        } else if (last_drag_drop_edit_container.length !== 0) {
+            if (rows.get_message_id(last_drag_drop_edit_container) !== config.row) {
+                return;
+            }
+        } else {
+            compose_actions.start("stream");
+        }
+
+        const img = event.originalEvent.dataTransfer.files;
+        exports.upload_files(uppy, config, img);
     });
 
     uppy.on("upload-success", (file, response) => {

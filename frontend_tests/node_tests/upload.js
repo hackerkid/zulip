@@ -24,6 +24,7 @@ zrequire("compose_ui");
 zrequire("compose_state");
 zrequire("compose");
 zrequire("compose_actions");
+zrequire("rows");
 
 const plugin_stub = {
     prototype: {
@@ -51,6 +52,7 @@ run_test("get_item", () => {
     assert.equal(upload.get_item("file_input_identifier", {mode: "compose"}), "#file_input");
     assert.equal(upload.get_item("source", {mode: "compose"}), "compose-file-input");
     assert.equal(upload.get_item("drag_drop_container", {mode: "compose"}), $("#compose"));
+    assert.equal(upload.get_item("main_container", {mode: "compose"}), $("#main_div"));
 
     assert.equal(upload.get_item("textarea", {mode: "edit", row: 1}), $("#message_edit_content_1"));
 
@@ -90,6 +92,7 @@ run_test("get_item", () => {
         upload.get_item("drag_drop_container", {mode: "edit", row: 1}),
         $(".message_edit_form"),
     );
+    assert.equal(upload.get_item("main_container", {mode: "edit", row: 1}), $("#main_div"));
 
     assert.throws(
         () => {
@@ -364,7 +367,7 @@ run_test("file_input", () => {
     assert(upload_files_called);
 });
 
-run_test("file_drop", () => {
+run_test("compose_file_drop", () => {
     set_global("$", global.make_zjquery());
 
     upload.setup_upload({mode: "compose"});
@@ -401,6 +404,95 @@ run_test("file_drop", () => {
     };
     drop_handler(drop_event);
     assert.equal(prevent_default_counter, 3);
+    assert.equal(upload_files_called, true);
+});
+
+run_test("main_file_drop", () => {
+    set_global("$", global.make_zjquery());
+    function uppy_stub() {
+        return {
+            setMeta: () => {},
+            use: () => {},
+            cancelAll: () => {},
+            on: () => {},
+            getFiles: () => {},
+            removeFile: () => {},
+            getState: () => ({}),
+        };
+    }
+    uppy_stub.Plugin = plugin_stub;
+    rewiremock.proxy(() => require("../../static/js/upload"), {"@uppy/core": uppy_stub});
+
+    upload.setup_upload({mode: "edit", row: 40});
+    let prevent_default_counter = 0;
+    const drag_event = {
+        preventDefault: () => {
+            prevent_default_counter += 1;
+        },
+    };
+    const dragover_handler = $("#main_div").get_on_handler("dragover");
+    dragover_handler(drag_event);
+    assert.equal(prevent_default_counter, 1);
+
+    const dragenter_handler = $("#main_div").get_on_handler("dragenter");
+    dragenter_handler(drag_event);
+    assert.equal(prevent_default_counter, 2);
+
+    const files = ["file1", "file2"];
+    const drop_event = {
+        target: "target",
+        preventDefault: () => {
+            prevent_default_counter += 1;
+        },
+        originalEvent: {
+            dataTransfer: {
+                files,
+            },
+        },
+    };
+    const drop_handler = $("#main_div").get_on_handler("drop");
+    let upload_files_called = false;
+    let contains_called = false;
+    upload.upload_files = () => {
+        upload_files_called = true;
+    };
+    $(".message_edit_form")[Symbol.iterator] = function* () {
+        yield {
+            contains: (elem) => {
+                assert.equal(elem, "target");
+                contains_called = true;
+                return true;
+            },
+        };
+    };
+    drop_handler(drop_event);
+    assert.equal(prevent_default_counter, 3);
+    assert.equal(contains_called, true);
+    assert.equal(upload_files_called, false);
+
+    $(".message_edit_form")[Symbol.iterator] = function* () {
+        yield {
+            contains: () => false,
+        };
+    };
+    $(".message_edit_form").last = () => ({length: 1});
+
+    compose_state.composing = () => true;
+    drop_handler(drop_event);
+    assert.equal(upload_files_called, false);
+
+    compose_state.composing = () => false;
+    rows.get_message_id = () => 22;
+    drop_handler(drop_event);
+    assert.equal(upload_files_called, false);
+
+    $(".message_edit_form").last = () => ({length: 0});
+    let compose_actions_start_called = false;
+    compose_actions.start = () => {
+        compose_actions_start_called = true;
+    };
+    drop_handler(drop_event);
+    assert.equal(compose_actions_start_called, true);
     assert.equal(upload_files_called, true);
 });
 
