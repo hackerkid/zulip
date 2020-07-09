@@ -59,7 +59,7 @@ exports.get_item = function (key, config) {
                 return $("#message_edit_content_" + config.row);
             case "send_button":
                 return $("#message_edit_content_" + config.row)
-                    .closest("#message_edit_form")
+                    .closest(".message_edit_form")
                     .find(".message_edit_save");
             case "send_status_identifier":
                 return "#message-edit-send-status-" + config.row;
@@ -74,7 +74,7 @@ exports.get_item = function (key, config) {
             case "source":
                 return "message-edit-file-input";
             case "drag_drop_container":
-                return $("#message_edit_form");
+                return $(".message_edit_form");
             default:
                 throw Error(`Invalid key name for mode "${config.mode}"`);
         }

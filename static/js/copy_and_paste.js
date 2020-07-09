@@ -332,7 +332,7 @@ exports.paste_handler = function (event) {
 
 exports.initialize = function () {
     $("#compose-textarea").on("paste", exports.paste_handler);
-    $("body").on("paste", "#message_edit_form", exports.paste_handler);
+    $("body").on("paste", ".message_edit_form", exports.paste_handler);
 };
 
 window.copy_and_paste = exports;
