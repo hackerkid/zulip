@@ -17,6 +17,7 @@ i18n_urlpatterns: Any = [
     # Billing
     path('billing/', corporate.views.billing_home, name='corporate.views.billing_home'),
     path('upgrade/', corporate.views.initial_upgrade, name='corporate.views.initial_upgrade'),
+    path('stripe/webhook/', corporate.views.stripe_webhook, name='corporate.views.stripe_webhook'),
 ]
 
 v1_api_and_json_patterns = [

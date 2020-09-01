@@ -3,34 +3,24 @@
 exports.initialize = () => {
     helpers.set_tab("upgrade");
 
-    const add_card_handler = StripeCheckout.configure({
-        // eslint-disable-line no-undef
-        key: $("#autopay-form").data("key"),
-        image: "/static/images/logo/zulip-icon-128x128.png",
-        locale: "auto",
-        token(stripe_token) {
-            helpers.create_ajax_request("/json/billing/upgrade", "autopay", stripe_token, [
-                "licenses",
-            ]);
-        },
-    });
+    const stripe = Stripe($("#autopay-form").data("key"));
 
     $("#add-card-button").on("click", (e) => {
+        e.preventDefault();
         const license_management = $("input[type=radio][name=license_management]:checked").val();
         if (helpers.is_valid_input($("#" + license_management + "_license_count")) === false) {
             return;
         }
-        add_card_handler.open({
-            name: "Zulip",
-            zipCode: true,
-            billingAddress: true,
-            panelLabel: "Make payment",
-            email: $("#autopay-form").data("email"),
-            label: "Add card",
-            allowRememberMe: false,
-            description: "Zulip Cloud Standard",
+        stripe.redirectToCheckout({
+            // Make the id field from the Checkout Session creation API response
+            // available to this file, so you can provide it as argument here
+            // instead of the {{CHECKOUT_SESSION_ID}} placeholder.
+            sessionId: $("#autopay-form").data("session-id")
+          }).then(function (result) {
+            // If `redirectToCheckout` fails due to a browser or network
+            // error, display the localized error message to your customer
+            // using `result.error.message`.
         });
-        e.preventDefault();
     });
 
     $("#invoice-button").on("click", (e) => {

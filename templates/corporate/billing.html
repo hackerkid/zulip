@@ -156,6 +156,12 @@
                             <h3>💚 Your organization is fully sponsored and is on the <b>Zulip Standard</b> plan.</h3>
                         </p>
                     </center>
+                    {% elif initial_upgrade_processing %}
+                    <center>
+                        <p>
+                            <h3>Your upgrade is in process. Please wait.</h3> 
+                        </p>
+                    </center>
                     {% else %}
                     <center>
                         <p>

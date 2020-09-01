@@ -2,6 +2,7 @@ import logging
 from decimal import Decimal
 from typing import Any, Dict, Optional, Union
 from urllib.parse import urlencode, urljoin, urlunsplit
+import json
 
 import stripe
 from django.conf import settings
@@ -11,6 +12,7 @@ from django.shortcuts import render
 from django.urls import reverse
 from django.utils.timezone import now as timezone_now
 from django.utils.translation import ugettext as _
+from django.views.decorators.csrf import csrf_exempt
 
 from corporate.lib.stripe import (
     DEFAULT_INVOICE_DAYS_UNTIL_DUE,
@@ -169,11 +171,20 @@ def initial_upgrade(request: HttpRequest) -> HttpResponse:
     if customer is not None and customer.default_discount is not None:
         percent_off = customer.default_discount
 
+    session = stripe.checkout.Session.create(
+        payment_method_types=['card'],
+        mode='setup',
+        success_url='http://realm-44.zulipdev.com:9991/billing/?session_id={CHECKOUT_SESSION_ID}',
+        cancel_url='http://realm-44.zulipdev.com:9991/upgrade/',
+        metadata={'realm_id': user.realm.id, 'realm_str': user.realm.string_id},
+    )
+
     seat_count = get_latest_seat_count(user.realm)
     signed_seat_count, salt = sign_string(str(seat_count))
     context: Dict[str, Any] = {
         'realm': user.realm,
         'publishable_key': STRIPE_PUBLISHABLE_KEY,
+        'session_id': session.id,
         'email': user.delivery_email,
         'seat_count': seat_count,
         'signed_seat_count': signed_seat_count,
@@ -243,6 +254,10 @@ def billing_home(request: HttpRequest) -> HttpResponse:
 
     if user.realm.plan_type == user.realm.STANDARD_FREE:
         context["is_sponsored"] = True
+        return render(request, 'corporate/billing.html', context=context)
+
+    if customer is None and request.GET.get("session_id"):
+        context["initial_upgrade_processing"] = True
         return render(request, 'corporate/billing.html', context=context)
 
     if customer is None:
@@ -337,3 +352,21 @@ def replace_payment_source(request: HttpRequest, user: UserProfile,
     except BillingError as e:
         return json_error(e.message, data={'error_description': e.description})
     return json_success()
+
+def handle_setup_intent(setup_intent):
+    pass
+
+@csrf_exempt
+def stripe_webhook(request):
+    payload = request.body
+    try:
+        event = stripe.Event.construct_from(json.loads(payload), stripe.api_key)
+    except ValueError as e:
+        return HttpResponse(status=400)
+
+    print(event)
+
+    if event.type == 'setup_intent.succeeded':
+        setup_intent = event.data.object
+        handle_setup_intent(setup_intent)
+    return HttpResponse(status=200)
