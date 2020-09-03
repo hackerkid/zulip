@@ -5,7 +5,7 @@ exports.create_ajax_request = function (
     form_name,
     stripe_token = null,
     numeric_inputs = [],
-    redirect_to = "/billing",
+    success_callback,
 ) {
     const form = $("#" + form_name + "-form");
     const form_loading_indicator = "#" + form_name + "_loading_indicator";
@@ -43,7 +43,7 @@ exports.create_ajax_request = function (
     $.post({
         url,
         data,
-        success() {
+        success(response) {
             $(form_loading).hide();
             $(form_error).hide();
             $(form_success).show();
@@ -54,7 +54,7 @@ exports.create_ajax_request = function (
                     location.hash = "";
                 }
             }
-            window.location.replace(redirect_to);
+            success_callback(response);
         },
         error(xhr) {
             $(form_loading).hide();
