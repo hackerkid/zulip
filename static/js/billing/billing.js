@@ -3,28 +3,18 @@
 exports.initialize = function () {
     helpers.set_tab("billing");
 
-    const stripe_key = $("#payment-method").data("key");
-    const card_change_handler = StripeCheckout.configure({
-        // eslint-disable-line no-undef
-        key: stripe_key,
-        image: "/static/images/logo/zulip-icon-128x128.png",
-        locale: "auto",
-        token(stripe_token) {
-            helpers.create_ajax_request("/json/billing/sources/change", "cardchange", stripe_token);
-        },
-    });
-
     $("#update-card-button").on("click", (e) => {
-        const email = $("#payment-method").data("email");
-        card_change_handler.open({
-            name: "Zulip",
-            zipCode: true,
-            billingAddress: true,
-            panelLabel: "Update card",
-            email,
-            label: "Update card",
-            allowRememberMe: false,
-        });
+        const success_callback = (response) => {
+            const stripe = Stripe(response.stripe_publishable_key);
+            stripe.redirectToCheckout({
+                sessionId: response.session_id
+              }).then(function (result) {
+                // If `redirectToCheckout` fails due to a browser or network
+                // error, display the localized error message to your customer
+                // using `result.error.message`.
+            });
+        }
+        helpers.create_ajax_request("/json/billing/session/start_card_update_session", "cardupdate", [], success_callback);
         e.preventDefault();
     });
 

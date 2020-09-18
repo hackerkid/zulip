@@ -2,6 +2,7 @@ import logging
 from decimal import Decimal
 from typing import Any, Dict, Optional, Union
 from urllib.parse import urlencode, urljoin, urlunsplit
+import json
 
 import stripe
 from django.conf import settings
@@ -11,6 +12,7 @@ from django.shortcuts import render
 from django.urls import reverse
 from django.utils.timezone import now as timezone_now
 from django.utils.translation import ugettext as _
+from django.views.decorators.csrf import csrf_exempt
 
 from corporate.lib.stripe import (
     DEFAULT_INVOICE_DAYS_UNTIL_DUE,
@@ -22,6 +24,8 @@ from corporate.lib.stripe import (
     do_replace_payment_source,
     downgrade_now,
     get_latest_seat_count,
+    get_stripe_session_cache_key,
+    handle_checkout_session_completed_event,
     make_end_of_cycle_updates_if_needed,
     process_initial_upgrade,
     renewal_amount,
@@ -29,6 +33,7 @@ from corporate.lib.stripe import (
     start_of_next_billing_cycle,
     stripe_get_customer,
     unsign_string,
+    update_or_create_stripe_customer,
     update_sponsorship_status,
 )
 from corporate.models import (
@@ -36,6 +41,10 @@ from corporate.models import (
     get_current_plan_by_customer,
     get_current_plan_by_realm,
     get_customer_by_realm,
+)
+from zerver.lib.cache import (
+    cache_get,
+    cache_set,
 )
 from zerver.decorator import (
     require_billing_access,
@@ -46,7 +55,11 @@ from zerver.lib.request import REQ, has_request_variables
 from zerver.lib.response import json_error, json_success
 from zerver.lib.send_email import FromAddress, send_email
 from zerver.lib.validator import check_int, check_string
-from zerver.models import UserProfile, get_realm
+from zerver.models import (
+    UserProfile,
+    get_realm,
+    get_user_by_delivery_email,
+)
 
 billing_logger = logging.getLogger('corporate.stripe')
 
@@ -58,17 +71,13 @@ def unsign_seat_count(signed_seat_count: str, salt: str) -> int:
 
 def check_upgrade_parameters(
         billing_modality: str, schedule: str, license_management: Optional[str], licenses: Optional[int],
-        has_stripe_token: bool, seat_count: int) -> None:
+        seat_count: int) -> None:
     if billing_modality not in ['send_invoice', 'charge_automatically']:
         raise BillingError('unknown billing_modality')
     if schedule not in ['annual', 'monthly']:
         raise BillingError('unknown schedule')
     if license_management not in ['automatic', 'manual']:
         raise BillingError('unknown license_management')
-
-    if billing_modality == 'charge_automatically':
-        if not has_stripe_token:
-            raise BillingError('autopay with no card')
 
     min_licenses = seat_count
     max_licenses = None
@@ -85,18 +94,18 @@ def check_upgrade_parameters(
                     "the upgrade, please contact {}.").format(max_licenses, settings.ZULIP_ADMINISTRATOR)
         raise BillingError('too many licenses', message)
 
+ 
 # Should only be called if the customer is being charged automatically
 def payment_method_string(stripe_customer: stripe.Customer) -> str:
-    stripe_source: Optional[Union[stripe.Card, stripe.Source]] = stripe_customer.default_source
-    # In case of e.g. an expired card
-    if stripe_source is None:  # nocoverage
+    default_payment_method = stripe_customer.invoice_settings.default_payment_method
+    if default_payment_method is None:
         return _("No payment method on file")
-    if stripe_source.object == "card":
-        assert isinstance(stripe_source, stripe.Card)
+
+    if default_payment_method.type == "card":
         return _("{brand} ending in {last4}").format(
-            brand=stripe_source.brand, last4=stripe_source.last4,
+            brand=default_payment_method.card.brand, last4=default_payment_method.card.last4,
         )
-    # There might be one-off stuff we do for a particular customer that
+    # There might be oneoff stuff we do for a particular customer that
     # would land them here. E.g. by default we don't support ACH for
     # automatic payments, but in theory we could add it for a customer via
     # the Stripe dashboard.
@@ -111,7 +120,6 @@ def upgrade(request: HttpRequest, user: UserProfile,
             schedule: str=REQ(validator=check_string),
             license_management: Optional[str]=REQ(validator=check_string, default=None),
             licenses: Optional[int]=REQ(validator=check_int, default=None),
-            stripe_token: Optional[str]=REQ(validator=check_string, default=None),
             signed_seat_count: str=REQ(validator=check_string),
             salt: str=REQ(validator=check_string)) -> HttpResponse:
     try:
@@ -121,31 +129,56 @@ def upgrade(request: HttpRequest, user: UserProfile,
         if billing_modality == 'send_invoice':
             schedule = 'annual'
             license_management = 'manual'
-        check_upgrade_parameters(
-            billing_modality, schedule, license_management, licenses,
-            stripe_token is not None, seat_count)
+        check_upgrade_parameters(billing_modality, schedule, license_management, licenses, seat_count)
         assert licenses is not None
         automanage_licenses = license_management == 'automatic'
+        charge_automatically = billing_modality == "charge_automatically"
 
         billing_schedule = {'annual': CustomerPlan.ANNUAL,
                             'monthly': CustomerPlan.MONTHLY}[schedule]
-        process_initial_upgrade(user, licenses, automanage_licenses, billing_schedule, stripe_token)
+        if charge_automatically:
+            customer = update_or_create_stripe_customer(user)
+            session = stripe.checkout.Session.create(
+                cancel_url=f'{user.realm.uri}/upgrade/',
+                customer=customer.stripe_customer_id,
+                metadata={
+                    'automanage_licenses': automanage_licenses,
+                    'billing_modality': billing_modality,
+                    'billing_schedule': billing_schedule,
+                    'licenses': licenses,
+                    'license_management': license_management,
+                    'seat_count': seat_count,
+                    'type': 'upgrade',
+                    'user_email': user.delivery_email,
+                    'realm_str': user.realm.string_id,
+                },
+                mode='setup',
+                payment_method_types=['card'],
+                success_url=f'{user.realm.uri}/upgrade/processing_status?session_id={{CHECKOUT_SESSION_ID}}',
+            )
+            cache_set(get_stripe_session_cache_key(session.id), {"status": "checkout_started"})
+            response_data = {"session_id": session.id}
+        else:
+            process_initial_upgrade(user, licenses, automanage_licenses, billing_schedule, charge_automatically)
+            response_data = {}
+
     except BillingError as e:
         if not settings.TEST_SUITE:  # nocoverage
             billing_logger.warning(
                 "BillingError during upgrade: %s. user=%s, realm=%s (%s), billing_modality=%s, "
-                "schedule=%s, license_management=%s, licenses=%s, has stripe_token: %s",
+                "schedule=%s, license_management=%s, licenses=%s",
                 e.description, user.id, user.realm.id, user.realm.string_id, billing_modality,
-                schedule, license_management, licenses, stripe_token is not None,
+                schedule, license_management, licenses,
             )
         return json_error(e.message, data={'error_description': e.description})
-    except Exception:
+    except Exception as e:
+        print(e)
         billing_logger.exception("Uncaught exception in billing:", stack_info=True)
         error_message = BillingError.CONTACT_SUPPORT
         error_description = "uncaught exception during upgrade"
         return json_error(error_message, data={'error_description': error_description})
     else:
-        return json_success()
+        return json_success(data=response_data)
 
 @zulip_login_required
 def initial_upgrade(request: HttpRequest) -> HttpResponse:
@@ -248,6 +281,10 @@ def billing_home(request: HttpRequest) -> HttpResponse:
     if customer is None:
         return HttpResponseRedirect(reverse('corporate.views.initial_upgrade'))
 
+    if request.GET.get("session_id"):
+        context["initial_upgrade_processing"] = True
+        return render(request, 'corporate/billing.html', context=context)
+
     if customer.sponsorship_pending:
         context["sponsorship_pending"] = True
         return render(request, 'corporate/billing.html', context=context)
@@ -337,3 +374,86 @@ def replace_payment_source(request: HttpRequest, user: UserProfile,
     except BillingError as e:
         return json_error(e.message, data={'error_description': e.description})
     return json_success()
+
+@zulip_login_required
+def create_customer_portal_session(request: HttpRequest):
+    customer = get_customer_by_realm(request.user.realm)
+    session = stripe.billing_portal.Session.create(
+        customer=customer.stripe_customer_id,
+        return_url=f'{request.user.realm.uri}/billing',
+    )
+    return HttpResponseRedirect(session.url)
+
+@csrf_exempt
+def stripe_webhook(request):
+    payload = request.body
+    try:
+        event = stripe.Event.construct_from(json.loads(payload), stripe.api_key)
+    except Exception:
+        return HttpResponse(status=400)
+
+    if event.type == 'checkout.session.completed':
+        stripe_session = event.data.object
+        try:
+            handle_checkout_session_completed_event(stripe_session)
+        except BillingError as e:
+            if not settings.TEST_SUITE:  # nocoverage
+                #### TODO: Pass user_id in session
+                billing_logger.warning(
+                    "BillingError during webhook upgrade: %s. session_id=%s, customer_id=%s,"
+                    "billing_modality=%s, schedule=%s, license_management=%s, licenses=%s",
+                    e.description, stripe_session.id, stripe_session.customer,
+                    stripe_session.metadata.billing_modality, stripe_session.metadata.billing_schedule,
+                    stripe_session.metadata.license_management, stripe_session.metadata.licenses,
+                )
+                cache_value = {
+                    "status": "upgrade_error",
+                    "message": e.message,
+                    "error_description": e.description,
+                }
+                cache_set(get_stripe_session_cache_key(stripe_session.id), cache_value)
+        except Exception as e:
+            billing_logger.exception("Uncaught exception in billing:", stack_info=True)
+            cache_value = {
+                "status": "upgrade_error",
+                "message": BillingError.CONTACT_SUPPORT,
+                "error_description": "uncaught exception during upgrade",
+            }
+            cache_set(get_stripe_session_cache_key(stripe_session.id), cache_value)
+
+    return HttpResponse(status=200)
+
+@require_billing_access
+@has_request_variables
+def session_status(request: HttpRequest, user: UserProfile):
+    session_id = request.GET.get("session_id", None)
+    cache_key = get_stripe_session_cache_key(session_id)
+    data = cache_get(cache_key)
+    if data:
+        return json_success(data=data[0])
+    return json_error("Session not found")
+
+@zulip_login_required
+def upgrade_webhook_status_page(request):
+    session_id = request.GET.get("session_id", None)
+    context = {
+        "session_id": session_id
+    }
+    return render(request, "corporate/webhook_status.html", context=context)
+
+@require_billing_access
+@has_request_variables
+def start_card_update_stripe_session(request: HttpRequest, user: UserProfile) -> HttpResponse:
+    customer = get_customer_by_realm(user.realm)
+    session = stripe.checkout.Session.create(
+        cancel_url=f'{user.realm.uri}/billing/',
+        customer=customer.stripe_customer_id,
+        metadata={
+            'type': 'card_update',
+        },
+        mode='setup',
+        payment_method_types=['card'],
+        success_url=f'{user.realm.uri}/upgrade/processing_status?session_id={{CHECKOUT_SESSION_ID}}',
+    )
+    cache_set(get_stripe_session_cache_key(session.id), {"status": "checkout_started"})
+    return json_success(data={"session_id": session.id, "stripe_publishable_key": STRIPE_PUBLISHABLE_KEY})

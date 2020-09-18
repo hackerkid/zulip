@@ -3,7 +3,6 @@
 exports.create_ajax_request = function (
     url,
     form_name,
-    stripe_token = null,
     numeric_inputs = [],
     success_callback,
 ) {
@@ -28,10 +27,6 @@ exports.create_ajax_request = function (
     $(free_trial_alert_message).hide();
 
     const data = {};
-    if (stripe_token) {
-        data.stripe_token = JSON.stringify(stripe_token.id);
-    }
-
     form.serializeArray().forEach((item) => {
         if (numeric_inputs.includes(item.name)) {
             data[item.name] = item.value;

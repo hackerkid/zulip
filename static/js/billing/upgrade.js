@@ -3,36 +3,24 @@
 exports.initialize = () => {
     helpers.set_tab("upgrade");
 
-    const add_card_handler = StripeCheckout.configure({
-        // eslint-disable-line no-undef
-        key: $("#autopay-form").data("key"),
-        image: "/static/images/logo/zulip-icon-128x128.png",
-        locale: "auto",
-        token(stripe_token) {
-            const success_callback = () => {
-                window.location.replace("/billing");
-            }
-            helpers.create_ajax_request("/json/billing/upgrade", "autopay", stripe_token,
-                                        ["licenses"], success_callback);
-        },
-    });
+    const stripe = Stripe($("#autopay-form").data("key"));
 
     $("#add-card-button").on("click", (e) => {
         const license_management = $("input[type=radio][name=license_management]:checked").val();
         if (helpers.is_valid_input($("#" + license_management + "_license_count")) === false) {
             return;
         }
-        add_card_handler.open({
-            name: "Zulip",
-            zipCode: true,
-            billingAddress: true,
-            panelLabel: "Make payment",
-            email: $("#autopay-form").data("email"),
-            label: "Add card",
-            allowRememberMe: false,
-            description: "Zulip Cloud Standard",
-        });
         e.preventDefault();
+        const success_callback = (response) => {
+            stripe.redirectToCheckout({
+                sessionId: response.session_id
+              }).then(function (result) {
+                // If `redirectToCheckout` fails due to a browser or network
+                // error, display the localized error message to your customer
+                // using `result.error.message`.
+            });
+        }
+        helpers.create_ajax_request("/json/billing/upgrade", "autopay", ["licenses"], success_callback);
     });
 
     $("#invoice-button").on("click", (e) => {
@@ -43,7 +31,7 @@ exports.initialize = () => {
         const success_callback = () => {
             window.location.replace("/billing");
         }
-        helpers.create_ajax_request("/json/billing/upgrade", "invoice", undefined, ["licenses"], success_callback);
+        helpers.create_ajax_request("/json/billing/upgrade", "invoice", ["licenses"], success_callback);
     });
 
     $("#sponsorship-button").on("click", (e) => {
@@ -57,8 +45,7 @@ exports.initialize = () => {
         helpers.create_ajax_request(
             "/json/billing/sponsorship",
             "sponsorship",
-            undefined,
-            undefined,
+            [],
             success_callback,
         );
     });

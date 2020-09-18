@@ -180,6 +180,7 @@
         display: none;
     }
 
+    #webhook-loading,
     #sponsorship-loading,
     #planchange-loading,
     #cardchange-loading,
@@ -190,6 +191,7 @@
         text-align: center;
     }
 
+    #webhook-success,
     #sponsorship-success,
     #planchange-success,
     #cardchange-success,
@@ -199,6 +201,7 @@
         display: none;
     }
 
+    #webhook-error,
     #sponsorship-error,
     #planchange-error,
     #cardchange-error,
@@ -229,6 +232,7 @@
         stroke: hsl(0, 0%, 100%);
     }
 
+    #webhook_loading_indicator,
     #sponsorship_loading_indicator,
     #planchange_loading_indicator,
     #cardchange_loading_indicator,
@@ -237,6 +241,7 @@
         margin: 10px auto;
     }
 
+    #webhook_loading_indicator_box_container,
     #sponsorship_loading_indicator_box_container,
     #planchange_loading_indicator_box_container,
     #cardchange_loading_indicator_box_container,
@@ -246,6 +251,7 @@
         left: 50%;
     }
 
+    #webhook_loading_indicator_box,
     #sponsorship_loading_indicator_box,
     #planchange_loading_indicator_box,
     #cardchange_loading_indicator_box,
@@ -258,6 +264,7 @@
         border-radius: 6px;
     }
 
+    #webhook_loading_indicator .loading_indicator_text,
     #sponsorship_loading_indicator .loading_indicator_text,
     #planchange_loading_indicator .loading_indicator_text,
     #cardchange_loading_indicator .loading_indicator_text,
@@ -272,6 +279,7 @@
         display: none;
     }
 }
+
 
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button {

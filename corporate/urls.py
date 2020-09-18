@@ -16,7 +16,11 @@ i18n_urlpatterns: Any = [
 
     # Billing
     path('billing/', corporate.views.billing_home, name='corporate.views.billing_home'),
+    path('billing/create_customer_portal_session', corporate.views.create_customer_portal_session,
+         name='corporate.views.create_customer_portal_session'),
     path('upgrade/', corporate.views.initial_upgrade, name='corporate.views.initial_upgrade'),
+    path('upgrade/processing_status', corporate.views.upgrade_webhook_status_page, name='corporate.views.upgrade_webhook_status_page'),
+    path('stripe/webhook/', corporate.views.stripe_webhook, name='corporate.views.stripe_webhook'),
 ]
 
 v1_api_and_json_patterns = [
@@ -28,6 +32,10 @@ v1_api_and_json_patterns = [
          {'POST': 'corporate.views.change_plan_status'}),
     path('billing/sources/change', rest_dispatch,
          {'POST': 'corporate.views.replace_payment_source'}),
+    path('billing/session/start_card_update_session', rest_dispatch,
+         {'POST': 'corporate.views.start_card_update_stripe_session'}),
+    path('billing/session/status', rest_dispatch,
+         {'GET': 'corporate.views.session_status'})
 ]
 
 # Make a copy of i18n_urlpatterns so that they appear without prefix for English

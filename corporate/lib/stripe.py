@@ -24,9 +24,17 @@ from corporate.models import (
     get_current_plan_by_realm,
     get_customer_by_realm,
 )
+from zerver.lib.cache import cache_set
 from zerver.lib.logging_util import log_to_file
 from zerver.lib.timestamp import datetime_to_timestamp, timestamp_to_datetime
-from zerver.models import Realm, RealmAuditLog, UserProfile, get_system_bot
+from zerver.models import (
+    Realm,
+    RealmAuditLog,
+    UserProfile,
+    get_realm,
+    get_system_bot,
+    get_user_by_delivery_email
+)
 from zproject.config import get_secret
 
 STRIPE_PUBLISHABLE_KEY = get_secret('stripe_publishable_key')
@@ -189,10 +197,10 @@ def catch_stripe_errors(func: CallableT) -> CallableT:
 
 @catch_stripe_errors
 def stripe_get_customer(stripe_customer_id: str) -> stripe.Customer:
-    return stripe.Customer.retrieve(stripe_customer_id, expand=["default_source"])
+    return stripe.Customer.retrieve(stripe_customer_id, expand=["invoice_settings", "invoice_settings.default_payment_method"])
 
 @catch_stripe_errors
-def do_create_stripe_customer(user: UserProfile, stripe_token: Optional[str]=None) -> Customer:
+def do_create_stripe_customer(user: UserProfile, payment_method: Optional[str]=None) -> Customer:
     realm = user.realm
     # We could do a better job of handling race conditions here, but if two
     # people from a realm try to upgrade at exactly the same time, the main
@@ -202,13 +210,13 @@ def do_create_stripe_customer(user: UserProfile, stripe_token: Optional[str]=Non
         description=f"{realm.string_id} ({realm.name})",
         email=user.delivery_email,
         metadata={'realm_id': realm.id, 'realm_str': realm.string_id},
-        source=stripe_token)
+        payment_method=payment_method)
     event_time = timestamp_to_datetime(stripe_customer.created)
     with transaction.atomic():
         RealmAuditLog.objects.create(
             realm=user.realm, acting_user=user, event_type=RealmAuditLog.STRIPE_CUSTOMER_CREATED,
             event_time=event_time)
-        if stripe_token is not None:
+        if payment_method is not None:
             RealmAuditLog.objects.create(
                 realm=user.realm, acting_user=user, event_type=RealmAuditLog.STRIPE_CARD_CHANGED,
                 event_time=event_time)
@@ -219,15 +227,18 @@ def do_create_stripe_customer(user: UserProfile, stripe_token: Optional[str]=Non
     return customer
 
 @catch_stripe_errors
-def do_replace_payment_source(user: UserProfile, stripe_token: str,
-                              pay_invoices: bool=False) -> stripe.Customer:
+def do_replace_payment_source(user: UserProfile, payment_method: str,
+                              pay_invoices: bool=False) -> None:
     customer = get_customer_by_realm(user.realm)
     assert(customer is not None)  # for mypy
 
-    stripe_customer = stripe_get_customer(customer.stripe_customer_id)
-    stripe_customer.source = stripe_token
-    # Deletes existing card: https://stripe.com/docs/api#update_customer-source
-    updated_stripe_customer = stripe.Customer.save(stripe_customer)
+    stripe.Customer.modify(
+        customer.stripe_customer_id,
+        invoice_settings={
+            "default_payment_method": payment_method
+        }
+    )
+
     RealmAuditLog.objects.create(
         realm=user.realm, acting_user=user, event_type=RealmAuditLog.STRIPE_CARD_CHANGED,
         event_time=timezone_now())
@@ -239,7 +250,6 @@ def do_replace_payment_source(user: UserProfile, stripe_token: str,
             # were payment(s) and that they succeeded or failed).
             # Worth fixing if we notice that a lot of cards end up failing at this step.
             stripe.Invoice.pay(stripe_invoice)
-    return updated_stripe_customer
 
 # event_time should roughly be timezone_now(). Not designed to handle
 # event_times in the past or future
@@ -311,13 +321,13 @@ def make_end_of_cycle_updates_if_needed(plan: CustomerPlan,
 
 # Returns Customer instead of stripe_customer so that we don't make a Stripe
 # API call if there's nothing to update
-def update_or_create_stripe_customer(user: UserProfile, stripe_token: Optional[str]=None) -> Customer:
+def update_or_create_stripe_customer(user: UserProfile, payment_method: Optional[str]=None) -> Customer:
     realm = user.realm
     customer = get_customer_by_realm(realm)
     if customer is None or customer.stripe_customer_id is None:
-        return do_create_stripe_customer(user, stripe_token=stripe_token)
-    if stripe_token is not None:
-        do_replace_payment_source(user, stripe_token)
+        return do_create_stripe_customer(user, payment_method=payment_method)
+    if payment_method is not None:
+        do_replace_payment_source(user, payment_method)
     return customer
 
 def compute_plan_parameters(
@@ -356,10 +366,9 @@ def decimal_to_float(obj: object) -> object:
 # Only used for cloud signups
 @catch_stripe_errors
 def process_initial_upgrade(user: UserProfile, licenses: int, automanage_licenses: bool,
-                            billing_schedule: int, stripe_token: Optional[str]) -> None:
+                            billing_schedule: int, charge_automatically: bool) -> None:
     realm = user.realm
-    customer = update_or_create_stripe_customer(user, stripe_token=stripe_token)
-    charge_automatically = stripe_token is not None
+    customer = update_or_create_stripe_customer(user)
     free_trial = settings.FREE_TRIAL_DAYS not in (None, 0)
 
     if get_current_plan_by_customer(customer) is not None:
@@ -373,30 +382,6 @@ def process_initial_upgrade(user: UserProfile, licenses: int, automanage_license
 
     billing_cycle_anchor, next_invoice_date, period_end, price_per_license = compute_plan_parameters(
         automanage_licenses, billing_schedule, customer.default_discount, free_trial)
-    # The main design constraint in this function is that if you upgrade with a credit card, and the
-    # charge fails, everything should be rolled back as if nothing had happened. This is because we
-    # expect frequent card failures on initial signup.
-    # Hence, if we're going to charge a card, do it at the beginning, even if we later may have to
-    # adjust the number of licenses.
-    if charge_automatically:
-        if not free_trial:
-            stripe_charge = stripe.Charge.create(
-                amount=price_per_license * licenses,
-                currency='usd',
-                customer=customer.stripe_customer_id,
-                description=f"Upgrade to Zulip Standard, ${price_per_license/100} x {licenses}",
-                receipt_email=user.delivery_email,
-                statement_descriptor='Zulip Standard')
-            # Not setting a period start and end, but maybe we should? Unclear what will make things
-            # most similar to the renewal case from an accounting perspective.
-            assert isinstance(stripe_charge.source, stripe.Card)
-            description = f"Payment (Card ending in {stripe_charge.source.last4})"
-            stripe.InvoiceItem.create(
-                amount=price_per_license * licenses * -1,
-                currency='usd',
-                customer=customer.stripe_customer_id,
-                description=description,
-                discountable=False)
 
     # TODO: The correctness of this relies on user creation, deactivation, etc being
     # in a transaction.atomic() with the relevant RealmAuditLog entries
@@ -459,6 +444,32 @@ def process_initial_upgrade(user: UserProfile, licenses: int, automanage_license
 
     from zerver.lib.actions import do_change_plan_type
     do_change_plan_type(realm, Realm.STANDARD)
+
+def get_stripe_session_cache_key(session_id: str) -> str:
+    return f"stripe-session-{session_id}"
+
+def handle_checkout_session_completed_event(stripe_session):
+    cache_key = f"stripe-session-{stripe_session.id}"
+    cache_set(cache_key, {"status": "checkout_completed"})
+
+    stripe_setup_intent = stripe.SetupIntent.retrieve(stripe_session.setup_intent,
+                                                      expand=["customer"])
+    stripe_customer = stripe_setup_intent.customer
+    realm = get_realm(stripe_customer.metadata.realm_str)
+    user = get_user_by_delivery_email(stripe_customer.email, realm)
+
+    update_or_create_stripe_customer(user, stripe_setup_intent.payment_method)
+
+    if stripe_session.metadata.type == "upgrade":
+
+        automanage_licenses = stripe_session.metadata.license_management == "automatic"
+        charge_automatically = stripe_session.metadata.billing_modality == "charge_automatically"
+
+        process_initial_upgrade(user, int(stripe_session.metadata.licenses), automanage_licenses,
+                                int(stripe_session.metadata.billing_schedule), charge_automatically)
+        cache_set(cache_key, {"status": "upgrade_completed"})
+    elif stripe_session.metadata.type == "card_update":
+        cache_set(cache_key, {"status": "card_update_completed"})
 
 def update_license_ledger_for_automanaged_plan(realm: Realm, plan: CustomerPlan,
                                                event_time: datetime) -> None:
