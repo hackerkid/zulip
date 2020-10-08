@@ -33,6 +33,7 @@ def plans_view(request: HttpRequest) -> HttpResponse:
     realm = get_realm_from_request(request)
     free_trial_days = settings.FREE_TRIAL_DAYS
     sponsorship_pending = False
+    realm_on_free_trial = False
 
     if realm is not None:
         if realm.plan_type == Realm.SELF_HOSTED and settings.PRODUCTION:
@@ -42,15 +43,18 @@ def plans_view(request: HttpRequest) -> HttpResponse:
         if request.user.is_guest:
             return TemplateResponse(request, "404.html", status=404)
         if settings.CORPORATE_ENABLED:
+            from corporate.lib.stripe import is_realm_on_free_trial
             from corporate.models import get_customer_by_realm
             customer = get_customer_by_realm(realm)
             if customer is not None:
                 sponsorship_pending = customer.sponsorship_pending
+                realm_on_free_trial = is_realm_on_free_trial(realm)
 
     return TemplateResponse(
         request,
         "zerver/plans.html",
-        context={"realm": realm, 'free_trial_days': free_trial_days, 'sponsorship_pending': sponsorship_pending},
+        context={"realm": realm, 'free_trial_days': free_trial_days, 'sponsorship_pending': sponsorship_pending,
+                 "realm_on_free_trial": realm_on_free_trial},
     )
 
 @add_google_analytics
