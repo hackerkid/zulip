@@ -1,0 +1,19 @@
+Your organization's free trial of Zulip Standard is expiring on {{ expiry_date }}.
+
+{% if charge_automatically %}
+    {% if automanage_licenses %}
+    You will be charged ${{ renewal_amount }} (or more if you add additional users) and automatically migrated
+    to Zulip Standard at the end of free trial.
+    {% else %}
+    You will be charged ${{ renewal_amount }} and automatically migrated
+    to Zulip Standard at the end of free trial.
+    {% endif %}
+{% else %}
+    You will be sent an invoice for ${{ renewal_amount }} and automatically migrated
+    to Zulip Standard at the end of free trial.
+{% endif %}
+
+If you don't want to continue on Zulip Standard after free trial or get charged, please cancel your free
+trial by going to {{ billing_url }}.
+
+Also feel free to reach out to us at support@zulip.com for any for any queries.

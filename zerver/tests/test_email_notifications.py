@@ -13,11 +13,14 @@ from django.test import override_settings
 from django.utils.timezone import now as timezone_now
 from django_auth_ldap.config import LDAPSearch
 
-from corporate.models import Customer, CustomerPlan
+from corporate.lib.stripe import date_time_to_string
+from corporate.models import Customer, CustomerPlan, LicenseLedger
 from zerver.lib.actions import do_change_notification_settings, do_change_user_role
 from zerver.lib.email_notifications import (
     clear_free_trial_add_payment_method_reminder_emails,
+    clear_free_trial_expiring_reminder_emails,
     enqueue_free_trial_add_payment_method_reminder_emails,
+    enqueue_free_trial_expiring_reminder_emails,
     enqueue_welcome_emails,
     fix_emojis,
     fix_spoilers_in_html,
@@ -1047,5 +1050,69 @@ class TestFreeTrialEmails(ZulipTestCase):
         self.assertEqual(ScheduledEmail.objects.filter(realm=realm).count(), 2)
         self.assertEqual(
             ScheduledEmail.objects.filter(realm=realm, type=ScheduledEmail.FREE_TRIAL_ADD_PAYMENT_METHOD_REMINDER).count(),
+            0
+        )
+
+    def test_enqueue_free_trial_expiring_reminder_emails(self) -> None:
+        now = timezone_now()
+        free_trial_end_date = now + timedelta(days=60)
+        hamlet = self.example_user("hamlet")
+        hamlet.is_billing_admin = True
+        hamlet.save()
+        realm = get_realm("zulip")
+        self.assertEqual(realm.get_human_billing_admin_users().count(), 2)
+
+        # Only for generating ScheduledEmails of a diffrent type
+        enqueue_welcome_emails(hamlet)
+
+        customer = Customer.objects.create(realm=realm)
+        customer_plan = CustomerPlan.objects.create(customer=customer, billing_cycle_anchor=now,
+                                                    billing_schedule=CustomerPlan.MONTHLY,
+                                                    tier=CustomerPlan.STANDARD,
+                                                    price_per_license=800)
+
+        self.assertEqual(ScheduledEmail.objects.filter(realm=realm).count(), 2)
+        self.assertEqual(
+            ScheduledEmail.objects.filter(realm=realm, type=ScheduledEmail.FREE_TRIAL_EXPIRING_REMINDER).count(),
+            0
+        )
+        enqueue_free_trial_expiring_reminder_emails(customer_plan)
+        self.assertEqual(ScheduledEmail.objects.filter(realm=realm).count(), 2)
+        self.assertEqual(
+            ScheduledEmail.objects.filter(realm=realm, type=ScheduledEmail.FREE_TRIAL_EXPIRING_REMINDER).count(),
+            0
+        )
+
+        customer_plan.status = CustomerPlan.FREE_TRIAL
+        customer_plan.next_invoice_date = free_trial_end_date
+        customer_plan.save()
+
+        LicenseLedger.objects.create(plan=customer_plan, is_renewal=True, event_time=now,
+                                     licenses=10, licenses_at_next_renewal=10)
+
+        enqueue_free_trial_expiring_reminder_emails(customer_plan)
+        self.assertEqual(ScheduledEmail.objects.filter(realm=realm).count(), 3)
+        scheduled_emails = ScheduledEmail.objects.filter(realm=realm, type=ScheduledEmail.FREE_TRIAL_EXPIRING_REMINDER)
+        self.assertEqual(len(scheduled_emails), 1)
+
+        scheduled_email = scheduled_emails[0]
+
+        self.assertEqual(scheduled_email.type, ScheduledEmail.FREE_TRIAL_EXPIRING_REMINDER)
+        self.assertEqual(scheduled_email.users.all().count(), 2)
+        self.assertEqual(
+            set(list(scheduled_email.users.all().values_list('delivery_email'))),
+            set(list(realm.get_human_billing_admin_users().values_list('delivery_email')))
+        )
+        email_data = orjson.loads(scheduled_email.data)
+        self.assertEqual(email_data["context"]["expiry_date"],  date_time_to_string(free_trial_end_date))
+        self.assertEqual(email_data["context"]["renewal_amount"], "80.00")
+        self.assertEqual(email_data["context"]["billing_url"], "http://zulip.testserver/billing/")
+        self.assertEqual(email_data["context"]["realm_string_id"], "zulip")
+        self.assertEqual(email_data["context"]["realm_uri"], "http://zulip.testserver")
+
+        clear_free_trial_expiring_reminder_emails(customer_plan)
+        self.assertEqual(ScheduledEmail.objects.filter(realm=realm).count(), 2)
+        self.assertEqual(
+            ScheduledEmail.objects.filter(realm=realm, type=ScheduledEmail.FREE_TRIAL_EXPIRING_REMINDER).count(),
             0
         )

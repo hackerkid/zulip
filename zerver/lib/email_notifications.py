@@ -646,7 +646,12 @@ def convert_html_to_markdown(html: str) -> str:
                   "[\\2](\\1/\\2)", markdown)
 
 if settings.BILLING_ENABLED:
-    from corporate.lib.stripe import start_of_next_billing_cycle
+    from corporate.lib.stripe import (
+        cents_to_dollar_string,
+        date_time_to_string,
+        renewal_amount,
+        start_of_next_billing_cycle,
+    )
     from corporate.models import CustomerPlan
 
     def enqueue_free_trial_add_payment_method_reminder_emails(plan: CustomerPlan) -> None:
@@ -682,3 +687,41 @@ if settings.BILLING_ENABLED:
 
     def clear_free_trial_add_payment_method_reminder_emails(plan: CustomerPlan) -> None:
         ScheduledEmail.objects.filter(realm=plan.customer.realm, type=ScheduledEmail.FREE_TRIAL_ADD_PAYMENT_METHOD_REMINDER).delete()
+
+    def enqueue_free_trial_expiring_reminder_emails(plan: CustomerPlan) -> None:
+        if plan.status != CustomerPlan.FREE_TRIAL:
+            return
+        realm = plan.customer.realm
+
+        now = timezone_now()
+        expiry_date = start_of_next_billing_cycle(plan, now)
+        days_remaining = (expiry_date - now).days
+
+        if days_remaining <= 5:
+            return
+
+        renewal_cents = renewal_amount(plan, now)
+
+        context: Dict[str, Any] = {
+            "charge_automatically": plan.charge_automatically,
+            "automanage_licenses": plan.automanage_licenses,
+            "expiry_date": date_time_to_string(expiry_date),
+            "renewal_amount": cents_to_dollar_string(renewal_cents),
+            "billing_url": f"{realm.uri}{reverse('billing_home')}",
+            "realm_string_id": realm.string_id,
+            "realm_uri": realm.uri
+        }
+        language = realm.default_language
+
+        days_to_delay = days_remaining - 5
+        send_future_email_to_billing_admins(
+            "corporate/emails/free_trial_expiring_reminder",
+            plan.customer.realm,
+            from_name=FromAddress.security_email_from_name(language=language),
+            from_address=FromAddress.tokenized_no_reply_address(),
+            language=language, context=context,
+            delay=timedelta(days=days_to_delay)
+        )
+
+    def clear_free_trial_expiring_reminder_emails(plan: CustomerPlan) -> None:
+        ScheduledEmail.objects.filter(realm=plan.customer.realm, type=ScheduledEmail.FREE_TRIAL_EXPIRING_REMINDER).delete()

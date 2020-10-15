@@ -485,8 +485,10 @@ def process_initial_upgrade(user: UserProfile, licenses: int, automanage_license
         if event_type == RealmAuditLog.CUSTOMER_UPDATED_PLAN_WHILE_ADDING_PAYMENT_METHOD_DURING_FREE_TRIAL:
             from zerver.lib.email_notifications import (
                 clear_free_trial_add_payment_method_reminder_emails,
+                enqueue_free_trial_expiring_reminder_emails,
             )
             clear_free_trial_add_payment_method_reminder_emails(plan)
+            enqueue_free_trial_expiring_reminder_emails(plan)
 
         RealmAuditLog.objects.create(
             realm=realm, acting_user=user, event_time=billing_cycle_anchor,
@@ -676,8 +678,10 @@ def process_downgrade(plan: CustomerPlan) -> None:
     if plan.status == CustomerPlan.FREE_TRIAL:
         from zerver.lib.email_notifications import (
             clear_free_trial_add_payment_method_reminder_emails,
+            clear_free_trial_expiring_reminder_emails,
         )
         clear_free_trial_add_payment_method_reminder_emails(plan)
+        clear_free_trial_expiring_reminder_emails(plan)
 
     do_change_plan_type(plan.customer.realm, Realm.LIMITED)
     plan.status = CustomerPlan.ENDED

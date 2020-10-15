@@ -754,6 +754,11 @@ class StripeTest(StripeTestCase):
                 delay_days.add(orjson.loads(email.data)["context"]["days_remaining"])
             self.assertEqual(delay_days, {3, 6, 12, 30})
 
+            self.assertEqual(
+                ScheduledEmail.objects.filter(realm=realm, type=ScheduledEmail.FREE_TRIAL_EXPIRING_REMINDER).count(),
+                0
+            )
+
             with patch('corporate.views.timezone_now', return_value=self.now):
                 response = self.client_get("/billing/")
             self.assert_not_in_success_response(['Pay annually'], response)
@@ -818,6 +823,14 @@ class StripeTest(StripeTestCase):
                 len(ScheduledEmail.objects.filter(realm=get_realm("zulip"), type=ScheduledEmail.FREE_TRIAL_ADD_PAYMENT_METHOD_REMINDER)),
                 0
             )
+
+            realm = get_realm("zulip")
+            emails = ScheduledEmail.objects.filter(realm=realm, type=ScheduledEmail.FREE_TRIAL_EXPIRING_REMINDER)
+            self.assertEqual(len(emails), 1)
+            self.assertEqual(realm.get_human_billing_admin_users().count(), 2)
+            self.assertEqual(emails[0].users.all().count(), 2)
+            self.assertEqual(orjson.loads(emails[0].data)["context"]["expiry_date"], "March 2, 2012")
+            self.assertEqual(orjson.loads(emails[0].data)["context"]["renewal_amount"], f'{self.seat_count * 80:,.2f}')
 
             invoice_plans_as_needed(free_trial_end_date)
 
@@ -928,6 +941,14 @@ class StripeTest(StripeTestCase):
                 len(ScheduledEmail.objects.filter(realm=get_realm("zulip"), type=ScheduledEmail.FREE_TRIAL_ADD_PAYMENT_METHOD_REMINDER)),
                 0
             )
+
+            realm = get_realm("zulip")
+            emails = ScheduledEmail.objects.filter(realm=realm, type=ScheduledEmail.FREE_TRIAL_EXPIRING_REMINDER)
+            self.assertEqual(len(emails), 1)
+            self.assertEqual(realm.get_human_billing_admin_users().count(), 2)
+            self.assertEqual(emails[0].users.all().count(), 2)
+            self.assertEqual(orjson.loads(emails[0].data)["context"]["expiry_date"], "March 2, 2012")
+            self.assertEqual(orjson.loads(emails[0].data)["context"]["renewal_amount"], f'{80 * 123:,.2f}')
 
             customer = get_customer_by_realm(realm)
             assert(customer)
@@ -1931,6 +1952,11 @@ class StripeTest(StripeTestCase):
                 0
             )
 
+            self.assertEqual(
+                ScheduledEmail.objects.filter(realm=plan.customer.realm, type=ScheduledEmail.FREE_TRIAL_EXPIRING_REMINDER).count(),
+                1
+            )
+
             # Add some extra users before the realm is deactivated
             with patch("corporate.lib.stripe.get_latest_seat_count", return_value=21):
                 update_license_ledger_if_needed(user.realm, self.now)
@@ -1947,6 +1973,11 @@ class StripeTest(StripeTestCase):
             self.assertEqual(plan.status, CustomerPlan.ENDED)
             self.assertEqual(plan.invoiced_through, last_ledger_entry)
             self.assertIsNone(plan.next_invoice_date)
+
+            self.assertEqual(
+                ScheduledEmail.objects.filter(realm=plan.customer.realm, type=ScheduledEmail.FREE_TRIAL_EXPIRING_REMINDER).count(),
+                0
+            )
 
             self.login_user(user)
             response = self.client_get("/billing/")

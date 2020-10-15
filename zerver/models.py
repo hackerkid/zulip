@@ -2704,6 +2704,7 @@ class ScheduledEmail(AbstractScheduledJob):
     DIGEST = 2
     INVITATION_REMINDER = 3
     FREE_TRIAL_ADD_PAYMENT_METHOD_REMINDER = 4
+    FREE_TRIAL_EXPIRING_REMINDER = 5
     type: int = models.PositiveSmallIntegerField()
 
     def __str__(self) -> str:
@@ -2775,6 +2776,7 @@ EMAIL_TYPES = {
     'digest': ScheduledEmail.DIGEST,
     'invitation_reminder': ScheduledEmail.INVITATION_REMINDER,
     'free_trial_add_payment_method_reminder': ScheduledEmail.FREE_TRIAL_ADD_PAYMENT_METHOD_REMINDER,
+    'free_trial_expiring_reminder': ScheduledEmail.FREE_TRIAL_EXPIRING_REMINDER,
 }
 
 class AbstractRealmAuditLog(models.Model):

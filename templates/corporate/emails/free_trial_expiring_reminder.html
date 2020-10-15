@@ -1,0 +1,26 @@
+{% extends "zerver/emails/email_base_messages.html" %}
+
+{% block content %}
+    Your <a href="{{ realm_uri }}">organization's</a> free trial of Zulip Standard is expiring on <b>{{ expiry_date }}</b>.
+    <br>
+    <br>
+    {% if charge_automatically %}
+        {% if automanage_licenses %}
+        You will be charged <b>${{ renewal_amount }}</b> (or more if you add additional users) and automatically migrated
+        to Zulip Standard at the end of free trial.
+        {% else %}
+        You will be charged <b>${{ renewal_amount }}</b> and automatically migrated
+        to Zulip Standard at the end of free trial.
+        {% endif %}
+    {% else %}
+        You will be sent an invoice for <b>${{ renewal_amount }}</b> and automatically migrated
+        to Zulip Standard at the end of free trial.
+    {% endif %}
+    <br>
+    <br>
+    If you don't want to continue on Zulip Standard after free trial or get charged, please cancel
+    your free trial by going to your organization's <a href="{{ billing_url }}">billing page</a>.
+    <br>
+    <br>
+    Also feel free to reach out to us at <a href="support@zulip.com">support@zulip.com</a> for any queries.
+{% endblock %}
