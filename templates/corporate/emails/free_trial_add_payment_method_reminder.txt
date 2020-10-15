@@ -1,0 +1,14 @@
+Just want to give a heads up that your free trial of Zulip Standard plan for {{ realm_string_id }} will be ending in
+{{ days_remaining }} days.
+
+If you want to continue on Zulip Standard after the free trial, make sure to add a payment_method in your
+Zulip organization billing page by going to
+{{ billing_url }}.
+
+If you don't add a payment method before the free trial ends, you won't be charged and your organization will be downgraded
+to our Zulip free plan with limited message history, reduced storage space etc.
+
+Please look at the plans page for more details.
+{{ plans_url }}
+
+Also feel free to reach out to us at <a href="support@zulip.com">support@zulip.com</a> for any queries.

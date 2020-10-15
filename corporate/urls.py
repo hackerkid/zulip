@@ -22,7 +22,7 @@ i18n_urlpatterns: Any = [
     path('jobs/', TemplateView.as_view(template_name='corporate/jobs.html')),
 
     # Billing
-    path('billing/', billing_home),
+    path('billing/', billing_home, name='billing_home'),
     path('upgrade/', initial_upgrade, name='initial_upgrade'),
 ]
 

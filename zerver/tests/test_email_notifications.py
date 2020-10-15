@@ -1,5 +1,6 @@
 import random
 import re
+from datetime import timedelta
 from email.headerregistry import Address
 from typing import List, Sequence
 from unittest.mock import patch
@@ -9,10 +10,14 @@ import orjson
 from django.conf import settings
 from django.core import mail
 from django.test import override_settings
+from django.utils.timezone import now as timezone_now
 from django_auth_ldap.config import LDAPSearch
 
+from corporate.models import Customer, CustomerPlan
 from zerver.lib.actions import do_change_notification_settings, do_change_user_role
 from zerver.lib.email_notifications import (
+    clear_free_trial_add_payment_method_reminder_emails,
+    enqueue_free_trial_add_payment_method_reminder_emails,
     enqueue_welcome_emails,
     fix_emojis,
     fix_spoilers_in_html,
@@ -983,3 +988,64 @@ class TestMissedMessages(ZulipTestCase):
         expected_output = '<p>See <img alt=":cloud_with_lightning_and_rain:" src="http://example.com/static/generated/emoji/images-google-64/26c8.png" ' + \
                           'title="cloud with lightning and rain" style="height: 20px;">.</p>'
         self.assertEqual(actual_output, expected_output)
+
+class TestFreeTrialEmails(ZulipTestCase):
+    def test_enqueue_free_trial_add_payment_method_reminder_emails(self) -> None:
+        now = timezone_now()
+        hamlet = self.example_user("hamlet")
+        hamlet.is_billing_admin = True
+        hamlet.save()
+        realm = get_realm("zulip")
+        self.assertEqual(realm.get_human_billing_admin_users().count(), 2)
+
+        # Only for generating some ScheduledEmails of diffrent type
+        enqueue_welcome_emails(hamlet)
+
+        customer = Customer.objects.create(realm=realm)
+        customer_plan = CustomerPlan.objects.create(customer=customer, billing_cycle_anchor=now,
+                                                    billing_schedule=CustomerPlan.MONTHLY,
+                                                    tier=CustomerPlan.STANDARD)
+
+        self.assertEqual(ScheduledEmail.objects.filter(realm=realm).count(), 2)
+        self.assertEqual(
+            ScheduledEmail.objects.filter(realm=realm, type=ScheduledEmail.FREE_TRIAL_ADD_PAYMENT_METHOD_REMINDER).count(),
+            0
+        )
+        enqueue_free_trial_add_payment_method_reminder_emails(customer_plan)
+        self.assertEqual(ScheduledEmail.objects.filter(realm=realm).count(), 2)
+        self.assertEqual(
+            ScheduledEmail.objects.filter(realm=realm, type=ScheduledEmail.FREE_TRIAL_ADD_PAYMENT_METHOD_REMINDER).count(),
+            0
+        )
+
+        customer_plan.status = CustomerPlan.FREE_TRIAL
+        customer_plan.next_invoice_date = now + timedelta(days=60)
+        customer_plan.save()
+
+        enqueue_free_trial_add_payment_method_reminder_emails(customer_plan)
+        self.assertEqual(ScheduledEmail.objects.filter(realm=realm).count(), 6)
+        scheduled_emails = ScheduledEmail.objects.filter(realm=realm, type=ScheduledEmail.FREE_TRIAL_ADD_PAYMENT_METHOD_REMINDER)
+        self.assertEqual(len(scheduled_emails), 4)
+
+        delay_days = set()
+        for scheduled_email in scheduled_emails:
+            self.assertEqual(scheduled_email.type, ScheduledEmail.FREE_TRIAL_ADD_PAYMENT_METHOD_REMINDER)
+            self.assertEqual(scheduled_email.users.all().count(), 2)
+            self.assertEqual(
+                set(list(scheduled_email.users.all().values_list('delivery_email'))),
+                set(list(realm.get_human_billing_admin_users().values_list('delivery_email')))
+            )
+            email_data = orjson.loads(scheduled_email.data)
+            self.assertEqual(email_data["context"]["billing_url"], "http://zulip.testserver/billing/")
+            self.assertEqual(email_data["context"]["plans_url"], "http://zulip.testserver/plans/")
+            self.assertEqual(email_data["context"]["realm_string_id"], "zulip")
+            self.assertEqual(email_data["context"]["realm_uri"], "http://zulip.testserver")
+            delay_days.add(email_data["context"]["days_remaining"])
+        self.assertEqual(delay_days, {2, 5, 11, 29})
+
+        clear_free_trial_add_payment_method_reminder_emails(customer_plan)
+        self.assertEqual(ScheduledEmail.objects.filter(realm=realm).count(), 2)
+        self.assertEqual(
+            ScheduledEmail.objects.filter(realm=realm, type=ScheduledEmail.FREE_TRIAL_ADD_PAYMENT_METHOD_REMINDER).count(),
+            0
+        )

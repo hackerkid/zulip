@@ -1,0 +1,18 @@
+{% extends "zerver/emails/email_base_messages.html" %}
+
+{% block content %}
+Just want to give a heads up that your free trial of Zulip Standard plan for <a href="{{ realm_uri }}">{{ realm_string_id }}</a>
+will be ending in <b>{{ days_remaining }}</b> days.
+<br>
+<br>
+If you want to continue on Zulip Standard after the free trial, make sure to add a payment method in your
+Zulip organization's <a href="{{ billing_url }}">billing page</a>.
+<br>
+<br>
+If you don't add a payment method before the free trial ends, you won't be charged and your organization will be downgraded to Zulip
+free plan with limited message history, storage space etc. Please look at the <a href="{{ plans_url }}">plans page</a> for
+more details.
+<br>
+<br>
+Also feel free to reach out to us at <a href="support@zulip.com">support@zulip.com</a> for any queries.
+{% endblock %}

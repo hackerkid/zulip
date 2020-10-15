@@ -223,6 +223,23 @@ def send_email_to_admins(template_prefix: str, realm: Realm, from_name: Optional
     send_email(template_prefix, to_user_ids=admin_user_ids, from_name=from_name,
                from_address=from_address, language=language, context=context)
 
+def send_email_to_billing_admins(template_prefix: str, realm: Realm, from_name: Optional[str]=None,
+                                 from_address: Optional[str]=None, language: Optional[str]=None,
+                                 context: Dict[str, Any]={}) -> None:
+    admins = realm.get_human_billing_admin_users()
+    admin_user_ids = [admin.id for admin in admins]
+    send_email(template_prefix, to_user_ids=admin_user_ids, from_name=from_name,
+               from_address=from_address, language=language, context=context)
+
+def send_future_email_to_billing_admins(template_prefix: str, realm: Realm, from_name: Optional[str]=None,
+                                        from_address: Optional[str]=None, language: Optional[str]=None,
+                                        context: Dict[str, Any]={}, delay: datetime.timedelta=datetime.timedelta(0)) -> None:
+    admins = realm.get_human_billing_admin_users()
+    admin_user_ids = [admin.id for admin in admins]
+    send_future_email(template_prefix, realm, to_user_ids=admin_user_ids, from_name=from_name,
+                      from_address=from_address, language=language, context=context,
+                      delay=delay)
+
 def clear_scheduled_invitation_emails(email: str) -> None:
     """Unlike most scheduled emails, invitation emails don't have an
     existing user object to key off of, so we filter by address here."""

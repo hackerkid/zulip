@@ -67,7 +67,7 @@ from zerver.lib.actions import (
 from zerver.lib.test_classes import ZulipTestCase
 from zerver.lib.test_helpers import reset_emails_in_zulip_realm
 from zerver.lib.timestamp import datetime_to_timestamp, timestamp_to_datetime
-from zerver.models import Realm, RealmAuditLog, UserProfile, get_realm
+from zerver.models import Realm, RealmAuditLog, ScheduledEmail, UserProfile, get_realm
 
 CallableT = TypeVar('CallableT', bound=Callable[..., Any])
 
@@ -615,7 +615,7 @@ class StripeTest(StripeTestCase):
         ], response)
         self.assert_not_in_success_response([
             'Choose a plan for your new organization',
-            '60 day free trial',
+            'day free trial',
             'Try Zulip with all the benefits of a paid plan',
             'Start on Zulip Free plan'
         ], response)
@@ -699,7 +699,8 @@ class StripeTest(StripeTestCase):
             free_trial_end_date = self.now + timedelta(days=60)
 
             with patch('corporate.lib.stripe.timezone_now', return_value=self.now):
-                self.upgrade(start_free_trial=True)
+                with patch('zerver.lib.email_notifications.timezone_now', return_value=self.now):
+                    self.upgrade(start_free_trial=True)
 
             stripe_customer = stripe_get_customer(Customer.objects.get(realm=user.realm).stripe_customer_id)
             self.assertFalse(stripe_customer_has_credit_card_as_default_source(stripe_customer))
@@ -742,6 +743,16 @@ class StripeTest(StripeTestCase):
             realm = get_realm("zulip")
             self.assertEqual(realm.plan_type, Realm.STANDARD)
             self.assertEqual(realm.max_invites, Realm.INVITES_STANDARD_REALM_DAILY_MAX)
+
+            emails = ScheduledEmail.objects.filter(realm=realm, type=ScheduledEmail.FREE_TRIAL_ADD_PAYMENT_METHOD_REMINDER)
+            self.assertEqual(len(emails), 4)
+            self.assertEqual(realm.get_human_billing_admin_users().count(), 2)
+
+            delay_days = set()
+            for email in emails:
+                self.assertEqual(email.users.all().count(), 2)
+                delay_days.add(orjson.loads(email.data)["context"]["days_remaining"])
+            self.assertEqual(delay_days, {3, 6, 12, 30})
 
             with patch('corporate.views.timezone_now', return_value=self.now):
                 response = self.client_get("/billing/")
@@ -792,14 +803,21 @@ class StripeTest(StripeTestCase):
             free_trial_end_date = self.now + timedelta(days=60)
 
             with patch('corporate.lib.stripe.timezone_now', return_value=self.now):
-                self.upgrade(start_free_trial=True)
+                with patch('zerver.lib.email_notifications.timezone_now', return_value=self.now):
+                    self.upgrade(start_free_trial=True)
 
             with patch('corporate.lib.stripe.timezone_now', return_value=self.next_month):
-                self.upgrade()
+                with patch('zerver.lib.email_notifications.timezone_now', return_value=self.now):
+                    self.upgrade()
 
             response = self.client_get("/upgrade/")
             self.assertEqual(response.status_code, 302)
             self.assertEqual(response.url, "/billing/")
+
+            self.assertEqual(
+                len(ScheduledEmail.objects.filter(realm=get_realm("zulip"), type=ScheduledEmail.FREE_TRIAL_ADD_PAYMENT_METHOD_REMINDER)),
+                0
+            )
 
             invoice_plans_as_needed(free_trial_end_date)
 
@@ -895,14 +913,21 @@ class StripeTest(StripeTestCase):
         free_trial_end_date = self.now + timedelta(days=60)
         with self.settings(FREE_TRIAL_DAYS=60):
             with patch('corporate.lib.stripe.timezone_now', return_value=self.now):
-                self.upgrade(start_free_trial=True)
+                with patch('zerver.lib.email_notifications.timezone_now', return_value=self.now):
+                    self.upgrade(start_free_trial=True)
 
             with patch('corporate.lib.stripe.timezone_now', return_value=self.now):
-                self.upgrade(invoice=True)
+                with patch('zerver.lib.email_notifications.timezone_now', return_value=self.now):
+                    self.upgrade(invoice=True)
 
             response = self.client_get("/upgrade/")
             self.assertEqual(response.status_code, 302)
             self.assertEqual(response.url, "/billing/")
+
+            self.assertEqual(
+                len(ScheduledEmail.objects.filter(realm=get_realm("zulip"), type=ScheduledEmail.FREE_TRIAL_ADD_PAYMENT_METHOD_REMINDER)),
+                0
+            )
 
             customer = get_customer_by_realm(realm)
             assert(customer)
@@ -995,7 +1020,8 @@ class StripeTest(StripeTestCase):
         free_trial_end_date = self.now + timedelta(days=60)
         with self.settings(FREE_TRIAL_DAYS=60):
             with patch('corporate.lib.stripe.timezone_now', return_value=self.now):
-                self.upgrade(start_free_trial=True)
+                with patch('zerver.lib.email_notifications.timezone_now', return_value=self.now):
+                    self.upgrade(start_free_trial=True)
 
         invoice_plans_as_needed(free_trial_end_date)
 
@@ -1840,6 +1866,11 @@ class StripeTest(StripeTestCase):
             self.assertEqual(get_realm('zulip').plan_type, Realm.STANDARD)
             self.assertEqual(plan.status, CustomerPlan.FREE_TRIAL)
 
+            self.assertEqual(
+                ScheduledEmail.objects.filter(realm=plan.customer.realm, type=ScheduledEmail.FREE_TRIAL_ADD_PAYMENT_METHOD_REMINDER).count(),
+                4
+            )
+
             # Add some extra users before the realm is deactivated
             with patch("corporate.lib.stripe.get_latest_seat_count", return_value=21):
                 update_license_ledger_if_needed(user.realm, self.now)
@@ -1856,6 +1887,11 @@ class StripeTest(StripeTestCase):
             self.assertEqual(plan.status, CustomerPlan.ENDED)
             self.assertEqual(plan.invoiced_through, last_ledger_entry)
             self.assertIsNone(plan.next_invoice_date)
+
+            self.assertEqual(
+                ScheduledEmail.objects.filter(realm=plan.customer.realm, type=ScheduledEmail.FREE_TRIAL_ADD_PAYMENT_METHOD_REMINDER).count(),
+                0
+            )
 
             self.login_user(user)
             response = self.client_get("/billing/")
@@ -1889,6 +1925,11 @@ class StripeTest(StripeTestCase):
             self.assertEqual(plan.next_invoice_date, free_trial_end_date)
             self.assertEqual(get_realm('zulip').plan_type, Realm.STANDARD)
             self.assertEqual(plan.status, CustomerPlan.FREE_TRIAL)
+
+            self.assertEqual(
+                ScheduledEmail.objects.filter(realm=plan.customer.realm, type=ScheduledEmail.FREE_TRIAL_ADD_PAYMENT_METHOD_REMINDER).count(),
+                0
+            )
 
             # Add some extra users before the realm is deactivated
             with patch("corporate.lib.stripe.get_latest_seat_count", return_value=21):

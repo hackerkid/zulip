@@ -10,6 +10,7 @@ import pytz
 from bs4 import BeautifulSoup
 from django.conf import settings
 from django.contrib.auth import get_backends
+from django.urls import reverse
 from django.utils.timezone import now as timezone_now
 from django.utils.translation import override as override_language
 from django.utils.translation import ugettext as _
@@ -20,7 +21,12 @@ from zerver.decorator import statsd_increment
 from zerver.lib.markdown.fenced_code import FENCE_RE
 from zerver.lib.message import bulk_access_messages
 from zerver.lib.queue import queue_json_publish
-from zerver.lib.send_email import FromAddress, send_future_email
+from zerver.lib.send_email import (
+    FromAddress,
+    ScheduledEmail,
+    send_future_email,
+    send_future_email_to_billing_admins,
+)
 from zerver.lib.types import DisplayRecipientT
 from zerver.lib.url_encoding import (
     huddle_narrow_url,
@@ -638,3 +644,41 @@ def convert_html_to_markdown(html: str) -> str:
     # `[image.png](http://foo.com/image.png)`.
     return re.sub("!\\[\\]\\((\\S*)/(\\S*)\\?(\\S*)\\)",
                   "[\\2](\\1/\\2)", markdown)
+
+if settings.BILLING_ENABLED:
+    from corporate.lib.stripe import start_of_next_billing_cycle
+    from corporate.models import CustomerPlan
+
+    def enqueue_free_trial_add_payment_method_reminder_emails(plan: CustomerPlan) -> None:
+        if plan.status != CustomerPlan.FREE_TRIAL:
+            return
+        realm = plan.customer.realm
+
+        now = timezone_now()
+        expiry_date = start_of_next_billing_cycle(plan, now)
+        days_remaining = (expiry_date - now).days
+
+        context: Dict[str, Any] = {
+            "billing_url": f"{realm.uri}{reverse('billing_home')}",
+            "plans_url": f"{realm.uri}{reverse('plans')}",
+            "realm_string_id": realm.string_id,
+            "realm_uri": realm.uri
+        }
+
+        language = realm.default_language
+        delays = [int(days_remaining * fraction) for fraction in [0.5, 0.2, 0.1, 0.05]]
+        for days_to_delay in delays:
+            if days_to_delay == 0:
+                continue
+            context["days_remaining"] = days_to_delay
+            send_future_email_to_billing_admins(
+                "corporate/emails/free_trial_add_payment_method_reminder",
+                realm,
+                from_name=FromAddress.security_email_from_name(language=language),
+                from_address=FromAddress.tokenized_no_reply_address(),
+                language=language, context=context,
+                delay=timedelta(days=days_to_delay)
+            )
+
+    def clear_free_trial_add_payment_method_reminder_emails(plan: CustomerPlan) -> None:
+        ScheduledEmail.objects.filter(realm=plan.customer.realm, type=ScheduledEmail.FREE_TRIAL_ADD_PAYMENT_METHOD_REMINDER).delete()
