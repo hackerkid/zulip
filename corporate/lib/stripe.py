@@ -145,6 +145,9 @@ def get_idempotency_key(ledger_entry: LicenseLedger) -> Optional[str]:
 def date_time_to_string(dt: datetime) -> str:
     return f"{dt:%B} {dt.day}, {dt.year}"
 
+def cents_to_dollar_string(cents: int) -> str:
+    return f'{cents / 100.:,.2f}'
+
 class BillingError(Exception):
     # error messages
     CONTACT_SUPPORT = ugettext_lazy("Something went wrong. Please contact {email}.")
