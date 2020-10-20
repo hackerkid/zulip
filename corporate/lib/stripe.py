@@ -142,6 +142,9 @@ def get_idempotency_key(ledger_entry: LicenseLedger) -> Optional[str]:
         return None
     return f'ledger_entry:{ledger_entry.id}'  # nocoverage
 
+def date_time_to_string(dt: datetime) -> str:
+    return f"{dt:%B} {dt.day}, {dt.year}"
+
 class BillingError(Exception):
     # error messages
     CONTACT_SUPPORT = ugettext_lazy("Something went wrong. Please contact {email}.")

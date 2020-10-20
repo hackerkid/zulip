@@ -18,6 +18,7 @@ from corporate.lib.stripe import (
     MIN_INVOICED_LICENSES,
     STRIPE_PUBLISHABLE_KEY,
     BillingError,
+    date_time_to_string,
     do_change_plan_status,
     do_replace_payment_source,
     downgrade_at_the_end_of_billing_cycle,
@@ -273,7 +274,7 @@ def billing_home(request: HttpRequest) -> HttpResponse:
             licenses = last_ledger_entry.licenses
             licenses_used = get_latest_seat_count(user.realm)
             # Should do this in javascript, using the user's timezone
-            renewal_date = '{dt:%B} {dt.day}, {dt.year}'.format(dt=start_of_next_billing_cycle(plan, now))
+            renewal_date = date_time_to_string(start_of_next_billing_cycle(plan, now))
             renewal_cents = renewal_amount(plan, now)
             charge_automatically = plan.charge_automatically
             stripe_customer = stripe_get_customer(customer.stripe_customer_id)
