@@ -566,6 +566,10 @@ def invoice_plans_as_needed(event_time: datetime=timezone_now()) -> None:
     for plan in CustomerPlan.objects.filter(next_invoice_date__lte=event_time):
         invoice_plan(plan, event_time)
 
+def is_realm_on_free_trial(realm: Realm) -> bool:
+    plan = get_current_plan_by_realm(realm)
+    return plan is not None and plan.is_free_trial()
+
 def attach_discount_to_realm(realm: Realm, discount: Decimal) -> None:
     Customer.objects.update_or_create(realm=realm, defaults={'default_discount': discount})
 
