@@ -83,6 +83,9 @@ class CustomerPlan(models.Model):
             self.NEVER_STARTED: "Never started"
         }[self.status]
 
+    def is_free_trial(self) -> bool:
+        return self.status == CustomerPlan.FREE_TRIAL
+
 def get_current_plan_by_customer(customer: Customer) -> Optional[CustomerPlan]:
     return CustomerPlan.objects.filter(
         customer=customer, status__lt=CustomerPlan.LIVE_STATUS_THRESHOLD).first()
