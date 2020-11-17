@@ -44,18 +44,23 @@ run_test("initialize", () => {
         create_ajax_request_called = true;
     };
 
-    let open_func_called = false;
-    const open_func = (config_opts) => {
+    let stripe_checkout_open_func_called = false;
+    let checkout_label_to_check = "Update card";
+    const stripe_checkout_open_func = (config_opts) => {
         assert.equal(config_opts.name, "Zulip");
         assert.equal(config_opts.zipCode, true);
         assert.equal(config_opts.billingAddress, true);
-        assert.equal(config_opts.panelLabel, "Update card");
-        assert.equal(config_opts.label, "Update card");
+        assert.equal(config_opts.panelLabel, checkout_label_to_check);
+        assert.equal(config_opts.label, checkout_label_to_check);
         assert.equal(config_opts.allowRememberMe, false);
         assert.equal(config_opts.email, "{{stripe_email}}");
 
         token_func("stripe_token");
-        open_func_called = true;
+        stripe_checkout_open_func_called = true;
+
+        return {
+            open: stripe_checkout_open_func,
+        };
     };
 
     let stripe_checkout_configure_called = false;
@@ -67,7 +72,7 @@ run_test("initialize", () => {
         stripe_checkout_configure_called = true;
 
         return {
-            open: open_func,
+            open: stripe_checkout_open_func,
         };
     };
 
@@ -78,13 +83,22 @@ run_test("initialize", () => {
 
     assert(set_tab_called);
     assert(stripe_checkout_configure_called);
+
     const e = {
         preventDefault: noop,
     };
-    const update_card_click_handler = $("#update-card-button").get_on_handler("click");
+    const update_card_click_handler = $("#billing-update-card-button").get_on_handler("click");
     update_card_click_handler(e);
     assert(create_ajax_request_called);
-    assert(open_func_called);
+    assert(stripe_checkout_open_func_called);
+
+    checkout_label_to_check = "Add card";
+    create_ajax_request_called = false;
+    stripe_checkout_open_func_called = false;
+    const add_card_click_handler = $("#billing-add-card-button").get_on_handler("click");
+    add_card_click_handler(e);
+    assert(create_ajax_request_called);
+    assert(stripe_checkout_open_func_called);
 
     create_ajax_request_called = false;
     const free_trial_add_payment_method_click_handler = $(

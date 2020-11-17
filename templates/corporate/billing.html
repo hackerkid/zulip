@@ -80,14 +80,20 @@
                                 <form id="cardchange-form">
                                     <p>Current payment method: <strong>{{ payment_method }}</strong></p>
                                     {% if charge_automatically %}
-                                        {% if realm_on_free_trial and not payment_method_attached %}
-                                        <button type="submit" id="free-trial-add-payment-method-button" class="stripe-button-el" href="">
-                                            <span id="free-trial-add-payment-method-button-span">Add payment method</span>
-                                        </button>
+                                        {% if payment_method_attached %}
+                                            <button id="billing-update-card-button" class="stripe-button-el">
+                                                <span id="billing-update-card-button-span">Update card</span>
+                                            </button>
                                         {% else %}
-                                        <button id="update-card-button" class="stripe-button-el">
-                                            <span id="update-card-button-span">Update card</span>
-                                        </button>
+                                            {% if realm_on_free_trial %}
+                                            <button type="submit" id="free-trial-add-payment-method-button" class="stripe-button-el" href="">
+                                                <span id="free-trial-add-payment-method-button-span">Add payment method</span>
+                                            </button>
+                                            {% else %}
+                                            <button id="billing-add-card-button" class="stripe-button-el">
+                                                <span id="billing-add-card-button-span">Add card</span>
+                                            </button>
+                                            {% endif %}
                                         {% endif %}
                                     {% endif %}
                                 </form>

@@ -14,7 +14,7 @@ exports.initialize = function () {
         },
     });
 
-    $("#update-card-button").on("click", (e) => {
+    $("#billing-update-card-button").on("click", (e) => {
         const email = $("#payment-method").data("email");
         card_change_handler.open({
             name: "Zulip",
@@ -23,6 +23,20 @@ exports.initialize = function () {
             panelLabel: "Update card",
             email,
             label: "Update card",
+            allowRememberMe: false,
+        });
+        e.preventDefault();
+    });
+
+    $("#billing-add-card-button").on("click", (e) => {
+        const email = $("#payment-method").data("email");
+        card_change_handler.open({
+            name: "Zulip",
+            zipCode: true,
+            billingAddress: true,
+            panelLabel: "Add card",
+            email,
+            label: "Add card",
             allowRememberMe: false,
         });
         e.preventDefault();
