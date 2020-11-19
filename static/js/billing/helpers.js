@@ -5,7 +5,7 @@ exports.create_ajax_request = function (
     form_name,
     stripe_token = null,
     numeric_inputs = [],
-    redirect_to = "/billing",
+    redirect_to = "",
 ) {
     const form = $("#" + form_name + "-form");
     const form_loading_indicator = "#" + form_name + "_loading_indicator";

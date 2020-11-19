@@ -143,7 +143,7 @@ run_test("create_ajax_request", () => {
 
         window.location.replace = (reload_to) => {
             state.location_reload += 1;
-            assert.equal(reload_to, "/billing");
+            assert.equal(reload_to, "");
         };
 
         success();
