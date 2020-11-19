@@ -1,6 +1,7 @@
 {
   "account_country": "US",
-  "account_name": null,
+  "account_name": "Vishnu Test",
+  "account_tax_ids": null,
   "amount_due": 280000,
   "amount_paid": 0,
   "amount_remaining": 280000,
@@ -29,20 +30,23 @@
   "default_tax_rates": [],
   "description": null,
   "discount": null,
+  "discounts": [],
   "due_date": null,
   "ending_balance": 0,
   "finalized_at": 1000000000,
   "footer": null,
-  "hosted_invoice_url": "https://pay.stripe.com/invoice/acct_NORMALIZED000001/invst_NORMALIZED0000000000000003r9OM2",
+  "hosted_invoice_url": "https://pay.stripe.com/invoice/acct_NORMALIZED000001/invst_NORMALIZED0000000000000003cNZYm",
   "id": "in_NORMALIZED00000000000003",
-  "invoice_pdf": "https://pay.stripe.com/invoice/acct_NORMALIZED000001/invst_NORMALIZED0000000000000003r9OM2/pdf",
+  "invoice_pdf": "https://pay.stripe.com/invoice/acct_NORMALIZED000001/invst_NORMALIZED0000000000000003cNZYm/pdf",
   "lines": {
     "data": [
       {
         "amount": 280000,
         "currency": "usd",
         "description": "Zulip Standard - renewal",
+        "discount_amounts": [],
         "discountable": false,
+        "discounts": [],
         "id": "ii_NORMALIZED00000000000004",
         "invoice_item": "ii_NORMALIZED00000000000004",
         "livemode": false,
@@ -58,13 +62,13 @@
           "billing_scheme": "per_unit",
           "created": 1000000000,
           "currency": "usd",
-          "id": "price_1GvQ35D2X8vgpBNGxxsMtJzq",
+          "id": "price_1HZbObD2X8vgpBNGUSGaJqrl",
           "livemode": false,
           "lookup_key": null,
           "metadata": {},
           "nickname": null,
           "object": "price",
-          "product": "prod_HUOqnsmnQwOxKS",
+          "product": "prod_I9vFIN9jNG87Vo",
           "recurring": null,
           "tiers_mode": null,
           "transform_quantity": null,
@@ -78,7 +82,7 @@
         "tax_amounts": [],
         "tax_rates": [],
         "type": "invoiceitem",
-        "unique_id": "il_1GvQ35D2X8vgpBNGRUNA2sh6"
+        "unique_id": "il_1HZbObD2X8vgpBNGyZuoQ2CY"
       }
     ],
     "has_more": false,
@@ -92,7 +96,7 @@
   "number": "NORMALI-0003",
   "object": "invoice",
   "paid": false,
-  "payment_intent": "pi_1GvQ37D2X8vgpBNGPnEnueSu",
+  "payment_intent": "pi_1HZbOcD2X8vgpBNGkpyfIkCs",
   "period_end": 1000000000,
   "period_start": 1000000000,
   "post_payment_credit_notes_amount": 0,
@@ -112,7 +116,8 @@
   "tax": null,
   "tax_percent": null,
   "total": 280000,
+  "total_discount_amounts": [],
   "total_tax_amounts": [],
   "transfer_data": null,
-  "webhooks_delivered_at": 1000000000
+  "webhooks_delivered_at": null
 }

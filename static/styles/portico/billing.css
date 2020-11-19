@@ -1,7 +1,7 @@
 .billing-upgrade-page {
     font-family: "Source Sans Pro", Helvetica, Arial, sans-serif;
     background-color: hsl(0, 0%, 98%);
-    height: 100vh;
+    min-height: 100vh;
 
     .hero {
         background-color: hsl(153, 32%, 55%);
@@ -180,6 +180,7 @@
         display: none;
     }
 
+    #freetrial-loading,
     #sponsorship-loading,
     #planchange-loading,
     #cardchange-loading,
@@ -190,6 +191,7 @@
         text-align: center;
     }
 
+    #freetrial-success,
     #sponsorship-success,
     #planchange-success,
     #cardchange-success,
@@ -199,6 +201,7 @@
         display: none;
     }
 
+    #freetrial-error,
     #sponsorship-error,
     #planchange-error,
     #cardchange-error,
@@ -229,6 +232,7 @@
         stroke: hsl(0, 0%, 100%);
     }
 
+    #freetrial_loading_indicator,
     #sponsorship_loading_indicator,
     #planchange_loading_indicator,
     #cardchange_loading_indicator,
@@ -237,6 +241,7 @@
         margin: 10px auto;
     }
 
+    #freetrial_loading_indicator_box_container,
     #sponsorship_loading_indicator_box_container,
     #planchange_loading_indicator_box_container,
     #cardchange_loading_indicator_box_container,
@@ -246,6 +251,7 @@
         left: 50%;
     }
 
+    #freetrial_loading_indicator_box,
     #sponsorship_loading_indicator_box,
     #planchange_loading_indicator_box,
     #cardchange_loading_indicator_box,
@@ -258,6 +264,7 @@
         border-radius: 6px;
     }
 
+    #freetrial_loading_indicator .loading_indicator_text,
     #sponsorship_loading_indicator .loading_indicator_text,
     #planchange_loading_indicator .loading_indicator_text,
     #cardchange_loading_indicator .loading_indicator_text,
@@ -280,4 +287,19 @@ input[name="licenses"]::-webkit-inner-spin-button {
 }
 input[name="licenses"] {
     appearance: textfield;
+}
+
+.or-hr {
+    display: inline-block;
+    width: 45%;
+}
+
+.or-text {
+    position: relative;
+    top: -15px;
+    font-size: 20px;
+    font-style: italic;
+    font-weight: 400;
+    padding-left: 5px;
+    padding-right: 5px;
 }

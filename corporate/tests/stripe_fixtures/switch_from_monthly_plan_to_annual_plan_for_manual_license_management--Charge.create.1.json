@@ -1,5 +1,6 @@
 {
   "amount": 28000,
+  "amount_captured": 28000,
   "amount_refunded": 0,
   "application": null,
   "application_fee": null,

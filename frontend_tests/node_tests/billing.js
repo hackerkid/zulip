@@ -23,6 +23,10 @@ set_global("StripeCheckout", {
 zrequire("billing", "js/billing/billing");
 set_global("$", global.make_zjquery());
 
+set_global("window", {
+    location: {},
+});
+
 run_test("initialize", () => {
     let token_func;
 
@@ -83,6 +87,18 @@ run_test("initialize", () => {
     assert(open_func_called);
 
     create_ajax_request_called = false;
+    const free_trial_add_payment_method_click_handler = $(
+        "#free-trial-add-payment-method-button",
+    ).get_on_handler("click");
+    let window_location_replace_called = false;
+    window.location.replace = (url) => {
+        assert.equal(url, "/upgrade");
+        window_location_replace_called = true;
+    };
+    free_trial_add_payment_method_click_handler(e);
+    assert(window_location_replace_called);
+    assert(!create_ajax_request_called);
+
     helpers.create_ajax_request = (url, form_name, stripe_token, numeric_inputs) => {
         assert.equal(url, "/json/billing/plan/change");
         assert.equal(form_name, "planchange");

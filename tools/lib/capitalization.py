@@ -62,6 +62,7 @@ IGNORED_PHRASES = [
     r"Zulip Account Security",
     r"Zulip Security",
     r"Zulip Standard",
+    r"Zulip Free",
     r"Zulip Team",
     r"iPhone",
     r"iOS",

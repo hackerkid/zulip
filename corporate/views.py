@@ -19,18 +19,22 @@ from corporate.lib.stripe import (
     STRIPE_PUBLISHABLE_KEY,
     BillingError,
     cents_to_dollar_string,
+    customer_has_credit_card_as_default_source,
     date_time_to_string,
     do_change_plan_status,
     do_replace_payment_source,
     downgrade_at_the_end_of_billing_cycle,
     downgrade_now_without_creating_additional_invoices,
     get_latest_seat_count,
+    is_free_trial_offer_enabled,
+    is_realm_on_free_trial,
     is_sponsored_realm,
     make_end_of_cycle_updates_if_needed,
     process_initial_upgrade,
     renewal_amount,
     sign_string,
     start_of_next_billing_cycle,
+    stripe_customer_has_credit_card_as_default_source,
     stripe_get_customer,
     unsign_string,
     update_sponsorship_status,
@@ -71,7 +75,7 @@ def check_upgrade_parameters(
         raise BillingError('unknown license_management')
 
     if billing_modality == 'charge_automatically':
-        if not has_stripe_token:
+        if not has_stripe_token and not is_free_trial_offer_enabled():
             raise BillingError('autopay with no card')
 
     min_licenses = seat_count
@@ -111,29 +115,45 @@ def payment_method_string(stripe_customer: stripe.Customer) -> str:
 @require_organization_member
 @has_request_variables
 def upgrade(request: HttpRequest, user: UserProfile,
-            billing_modality: str=REQ(validator=check_string),
-            schedule: str=REQ(validator=check_string),
+            billing_modality: Optional[str]=REQ(validator=check_string, default=None),
+            schedule: Optional[str]=REQ(validator=check_string, default=None),
             license_management: Optional[str]=REQ(validator=check_string, default=None),
             licenses: Optional[int]=REQ(validator=check_int, default=None),
             stripe_token: Optional[str]=REQ(validator=check_string, default=None),
-            signed_seat_count: str=REQ(validator=check_string),
-            salt: str=REQ(validator=check_string)) -> HttpResponse:
+            signed_seat_count: Optional[str]=REQ(validator=check_string, default=None),
+            salt: Optional[str]=REQ(validator=check_string, default=None),
+            start_free_trial: Optional[str]=REQ(validator=check_string, default=None)) -> HttpResponse:
     try:
-        seat_count = unsign_seat_count(signed_seat_count, salt)
-        if billing_modality == 'charge_automatically' and license_management == 'automatic':
-            licenses = seat_count
-        if billing_modality == 'send_invoice':
-            schedule = 'annual'
-            license_management = 'manual'
-        check_upgrade_parameters(
-            billing_modality, schedule, license_management, licenses,
-            stripe_token is not None, seat_count)
-        assert licenses is not None
-        automanage_licenses = license_management == 'automatic'
+        if start_free_trial:
+            assert(is_free_trial_offer_enabled())
+            assert(not is_realm_on_free_trial(user.realm))
+            licenses = get_latest_seat_count(user.realm)
+            charge_automatically = True
+            automanage_licenses = True
+            billing_schedule = CustomerPlan.MONTHLY
+        else:
+            assert(billing_modality)
+            assert(schedule)
+            assert(signed_seat_count)
+            assert(salt)
+            seat_count = unsign_seat_count(signed_seat_count, salt)
+            charge_automatically = billing_modality == 'charge_automatically'
+            if charge_automatically and license_management == 'automatic':
+                licenses = seat_count
+            if billing_modality == 'send_invoice':
+                schedule = 'annual'
+                license_management = 'manual'
+            check_upgrade_parameters(
+                billing_modality, schedule, license_management, licenses,
+                stripe_token is not None, seat_count)
+            assert licenses is not None
+            automanage_licenses = license_management == 'automatic'
 
-        billing_schedule = {'annual': CustomerPlan.ANNUAL,
-                            'monthly': CustomerPlan.MONTHLY}[schedule]
-        process_initial_upgrade(user, licenses, automanage_licenses, billing_schedule, stripe_token)
+            billing_schedule = {'annual': CustomerPlan.ANNUAL,
+                                'monthly': CustomerPlan.MONTHLY}[schedule]
+
+        process_initial_upgrade(user, licenses, automanage_licenses, billing_schedule,
+                                charge_automatically, stripe_token)
     except BillingError as e:
         if not settings.TEST_SUITE:  # nocoverage
             billing_logger.warning(
@@ -159,12 +179,23 @@ def initial_upgrade(request: HttpRequest) -> HttpResponse:
         return render(request, "404.html", status=404)
 
     billing_page_url = reverse(billing_home)
+    if request.GET.get("onboarding") is not None:
+        billing_page_url = f"{billing_page_url}?onboarding=true"
+
+    realm_on_free_trial = False
 
     customer = get_customer_by_realm(user.realm)
-    if customer is not None and (get_current_plan_by_customer(customer) is not None or customer.sponsorship_pending):
-        if request.GET.get("onboarding") is not None:
-            billing_page_url = f"{billing_page_url}?onboarding=true"
-        return HttpResponseRedirect(billing_page_url)
+    if customer:
+        plan = get_current_plan_by_customer(customer)
+        if plan:
+            if plan.is_free_trial():
+                if not plan.charge_automatically or customer_has_credit_card_as_default_source(customer):
+                    return HttpResponseRedirect(billing_page_url)
+                realm_on_free_trial = True
+            else:
+                return HttpResponseRedirect(billing_page_url)
+        elif customer.sponsorship_pending:
+            return HttpResponseRedirect(billing_page_url)
 
     if is_sponsored_realm(user.realm):
         return HttpResponseRedirect(billing_page_url)
@@ -186,6 +217,8 @@ def initial_upgrade(request: HttpRequest) -> HttpResponse:
         'default_invoice_days_until_due': DEFAULT_INVOICE_DAYS_UNTIL_DUE,
         'plan': "Zulip Standard",
         "free_trial_days": settings.FREE_TRIAL_DAYS,
+        "realm_on_free_trial": realm_on_free_trial,
+        "show_free_trial_form": is_free_trial_offer_enabled() and not realm_on_free_trial,
         "onboarding": request.GET.get("onboarding") is not None,
         'page_params': {
             'seat_count': seat_count,
@@ -279,6 +312,7 @@ def billing_home(request: HttpRequest) -> HttpResponse:
             renewal_cents = renewal_amount(plan, now)
             charge_automatically = plan.charge_automatically
             stripe_customer = stripe_get_customer(customer.stripe_customer_id)
+            payment_method_attached = stripe_customer_has_credit_card_as_default_source(stripe_customer)
             if charge_automatically:
                 payment_method = payment_method_string(stripe_customer)
             else:
@@ -287,7 +321,7 @@ def billing_home(request: HttpRequest) -> HttpResponse:
             context.update(
                 plan_name=plan.name,
                 has_active_plan=True,
-                free_trial=plan.is_free_trial(),
+                realm_on_free_trial=plan.is_free_trial(),
                 downgrade_at_end_of_cycle=downgrade_at_end_of_cycle,
                 automanage_licenses=plan.automanage_licenses,
                 switch_to_annual_at_end_of_cycle=switch_to_annual_at_end_of_cycle,
@@ -296,6 +330,7 @@ def billing_home(request: HttpRequest) -> HttpResponse:
                 renewal_date=renewal_date,
                 renewal_amount=cents_to_dollar_string(renewal_cents),
                 payment_method=payment_method,
+                payment_method_attached=payment_method_attached,
                 charge_automatically=charge_automatically,
                 publishable_key=STRIPE_PUBLISHABLE_KEY,
                 stripe_email=stripe_customer.email,

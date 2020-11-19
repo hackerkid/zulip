@@ -33,6 +33,10 @@ zrequire("helpers", "js/billing/helpers");
 zrequire("upgrade", "js/billing/upgrade");
 set_global("$", global.make_zjquery());
 
+set_global("window", {
+    location: {},
+});
+
 run_test("initialize", () => {
     let token_func;
     helpers.set_tab = (page_name) => {
@@ -52,6 +56,11 @@ run_test("initialize", () => {
             assert.equal(stripe_token, undefined);
             assert.deepEqual(numeric_inputs, ["licenses"]);
             assert.equal(redirect_to, undefined);
+        } else if (form_name === "freetrial") {
+            assert.equal(url, "/json/billing/upgrade");
+            assert.equal(stripe_token, undefined);
+            assert.deepEqual(numeric_inputs, []);
+            assert.deepEqual(redirect_to, "/billing?onboarding=true");
         } else if (form_name === "sponsorship") {
             assert.equal(url, "/json/billing/sponsorship");
             assert.equal(stripe_token, undefined);
@@ -104,29 +113,49 @@ run_test("initialize", () => {
     $("#autopay-form").data = (key) =>
         document.querySelector("#autopay-form").getAttribute("data-" + key);
 
+    $("#freetrial-form").data = (key) => {
+        assert.equal(key, "onboarding");
+        document.querySelector("#freetrial-form").getAttribute("data-" + key);
+        return "true";
+    };
+
     jquery_init();
+
+    const start_on_zulip_free_handler = $("#start-on-zulip-free-button").get_on_handler("click");
+    const start_free_trial_click_handler = $("#start-free-trial-button").get_on_handler("click");
+    const add_card_click_handler = $("#add-card-button").get_on_handler("click");
+    const invoice_click_handler = $("#invoice-button").get_on_handler("click");
+    const request_sponsorship_click_handler = $("#sponsorship-button").get_on_handler("click");
 
     const e = {
         preventDefault: noop,
     };
 
-    const add_card_click_handler = $("#add-card-button").get_on_handler("click");
-    const invoice_click_handler = $("#invoice-button").get_on_handler("click");
-    const request_sponsorship_click_handler = $("#sponsorship-button").get_on_handler("click");
-
     helpers.is_valid_input = () => true;
-    add_card_click_handler(e);
+
+    let window_location_replace_called = false;
+    window.location.replace = (url) => {
+        assert.equal(url, "/");
+        window_location_replace_called = true;
+    };
+    start_on_zulip_free_handler(e);
+    assert.equal(create_ajax_request_form_call_count, 0);
+    assert(window_location_replace_called);
+
+    start_free_trial_click_handler(e);
     assert.equal(create_ajax_request_form_call_count, 1);
-    invoice_click_handler(e);
+    add_card_click_handler(e);
     assert.equal(create_ajax_request_form_call_count, 2);
-    request_sponsorship_click_handler(e);
+    invoice_click_handler(e);
     assert.equal(create_ajax_request_form_call_count, 3);
+    request_sponsorship_click_handler(e);
+    assert.equal(create_ajax_request_form_call_count, 4);
 
     helpers.is_valid_input = () => false;
     add_card_click_handler(e);
     invoice_click_handler(e);
     request_sponsorship_click_handler(e);
-    assert.equal(create_ajax_request_form_call_count, 3);
+    assert.equal(create_ajax_request_form_call_count, 4);
 
     helpers.show_license_section = (section) => {
         assert.equal(section, "manual");
@@ -185,6 +214,10 @@ run_test("initialize", () => {
     );
 });
 
+run_test("freetrial_form_fields", () => {
+    assert.equal(document.querySelector("#freetrial-form [name=start_free_trial]").value, "true");
+});
+
 run_test("autopay_form_fields", () => {
     assert.equal(document.querySelector("#autopay-form").dataset.key, "{{ publishable_key }}");
     assert.equal(document.querySelector("#autopay-form").dataset.email, "{{ email }}");
@@ -231,8 +264,6 @@ run_test("autopay_form_fields", () => {
     assert(document.querySelector("#autopay_loading_indicator"));
 
     assert(document.querySelector("input[name=csrfmiddlewaretoken]"));
-
-    assert(document.querySelector("#free-trial-alert-message"));
 });
 
 run_test("invoice_form_fields", () => {
@@ -263,6 +294,4 @@ run_test("invoice_form_fields", () => {
     assert(document.querySelector("#invoice_loading_indicator"));
 
     assert(document.querySelector("input[name=csrfmiddlewaretoken]"));
-
-    assert(document.querySelector("#free-trial-alert-message"));
 });

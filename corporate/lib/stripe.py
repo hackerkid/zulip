@@ -278,9 +278,14 @@ def make_end_of_cycle_updates_if_needed(plan: CustomerPlan,
                 plan=plan, is_renewal=True, event_time=next_billing_cycle,
                 licenses=last_ledger_entry.licenses_at_next_renewal,
                 licenses_at_next_renewal=last_ledger_entry.licenses_at_next_renewal)
+
         if plan.is_free_trial():
-            plan.invoiced_through = last_ledger_entry
+            if plan.charge_automatically and not customer_has_credit_card_as_default_source(plan.customer):
+                downgrade_now_without_creating_additional_invoices(plan.customer.realm)
+                return None, None
+
             assert(plan.next_invoice_date is not None)
+            plan.invoiced_through = last_ledger_entry
             plan.billing_cycle_anchor = plan.next_invoice_date.replace(microsecond=0)
             plan.status = CustomerPlan.ACTIVE
             plan.save(update_fields=["invoiced_through", "billing_cycle_anchor", "status"])
@@ -381,13 +386,14 @@ def is_free_trial_offer_enabled() -> bool:
 # Only used for cloud signups
 @catch_stripe_errors
 def process_initial_upgrade(user: UserProfile, licenses: int, automanage_licenses: bool,
-                            billing_schedule: int, stripe_token: Optional[str]) -> None:
+                            billing_schedule: int, charge_automatically: bool, stripe_token: Optional[str]) -> None:
     realm = user.realm
     customer = update_or_create_stripe_customer(user, stripe_token=stripe_token)
-    charge_automatically = stripe_token is not None
-    free_trial = is_free_trial_offer_enabled()
+    free_trial_offer_enabled = is_free_trial_offer_enabled()
+    realm_on_free_trial = is_realm_on_free_trial(user.realm)
+    plan = get_current_plan_by_customer(customer)
 
-    if get_current_plan_by_customer(customer) is not None:
+    if plan and not realm_on_free_trial:
         # Unlikely race condition from two people upgrading (clicking "Make payment")
         # at exactly the same time. Doesn't fully resolve the race condition, but having
         # a check here reduces the likelihood.
@@ -397,14 +403,15 @@ def process_initial_upgrade(user: UserProfile, licenses: int, automanage_license
         raise BillingError('subscribing with existing subscription', str(BillingError.TRY_RELOADING))
 
     billing_cycle_anchor, next_invoice_date, period_end, price_per_license = compute_plan_parameters(
-        automanage_licenses, billing_schedule, customer.default_discount, free_trial)
+        automanage_licenses, billing_schedule, customer.default_discount, free_trial_offer_enabled)
+
     # The main design constraint in this function is that if you upgrade with a credit card, and the
     # charge fails, everything should be rolled back as if nothing had happened. This is because we
     # expect frequent card failures on initial signup.
     # Hence, if we're going to charge a card, do it at the beginning, even if we later may have to
     # adjust the number of licenses.
     if charge_automatically:
-        if not free_trial:
+        if not free_trial_offer_enabled and not realm_on_free_trial:
             stripe_charge = stripe.Charge.create(
                 amount=price_per_license * licenses,
                 currency='usd',
@@ -429,6 +436,7 @@ def process_initial_upgrade(user: UserProfile, licenses: int, automanage_license
         # billed_licenses can greater than licenses if users are added between the start of
         # this function (process_initial_upgrade) and now
         billed_licenses = max(get_latest_seat_count(realm), licenses)
+
         plan_params = {
             'automanage_licenses': automanage_licenses,
             'charge_automatically': charge_automatically,
@@ -436,27 +444,44 @@ def process_initial_upgrade(user: UserProfile, licenses: int, automanage_license
             'discount': customer.default_discount,
             'billing_cycle_anchor': billing_cycle_anchor,
             'billing_schedule': billing_schedule,
-            'tier': CustomerPlan.STANDARD}
-        if free_trial:
-            plan_params['status'] = CustomerPlan.FREE_TRIAL
-        plan = CustomerPlan.objects.create(
-            customer=customer,
-            next_invoice_date=next_invoice_date,
-            **plan_params)
+            'tier': CustomerPlan.STANDARD
+        }
+
+        if not plan:
+            if free_trial_offer_enabled:
+                plan_params['status'] = CustomerPlan.FREE_TRIAL
+            plan = CustomerPlan.objects.create(
+                customer=customer,
+                next_invoice_date=next_invoice_date,
+                **plan_params
+            )
+
+            event_type = RealmAuditLog.CUSTOMER_PLAN_CREATED
+        else:
+            plan.automanage_licenses = automanage_licenses
+            plan.charge_automatically = charge_automatically
+            plan.billing_schedule = billing_schedule
+            plan.price_per_license = price_per_license
+            plan.discount = customer.default_discount
+            plan.save(update_fields=["automanage_licenses", "charge_automatically", "price_per_license", "discount", "billing_schedule"])
+            event_type = RealmAuditLog.CUSTOMER_UPDATED_PLAN_WHILE_ADDING_PAYMENT_METHOD_DURING_FREE_TRIAL
+
         ledger_entry = LicenseLedger.objects.create(
             plan=plan,
             is_renewal=True,
             event_time=billing_cycle_anchor,
             licenses=billed_licenses,
-            licenses_at_next_renewal=billed_licenses)
+            licenses_at_next_renewal=billed_licenses
+        )
+        assert(plan)
         plan.invoiced_through = ledger_entry
         plan.save(update_fields=['invoiced_through'])
         RealmAuditLog.objects.create(
             realm=realm, acting_user=user, event_time=billing_cycle_anchor,
-            event_type=RealmAuditLog.CUSTOMER_PLAN_CREATED,
+            event_type=event_type,
             extra_data=orjson.dumps(plan_params, default=decimal_to_float).decode())
 
-    if not free_trial:
+    if not free_trial_offer_enabled and not realm_on_free_trial:
         stripe.InvoiceItem.create(
             currency='usd',
             customer=customer.stripe_customer_id,

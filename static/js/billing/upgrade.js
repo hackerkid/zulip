@@ -33,6 +33,26 @@ exports.initialize = () => {
         e.preventDefault();
     });
 
+    $("#start-free-trial-button").on("click", (e) => {
+        e.preventDefault();
+        let redirect_url = "/billing";
+        if ($("#freetrial-form").data("onboarding")) {
+            redirect_url = "/billing?onboarding=true";
+        }
+        helpers.create_ajax_request(
+            "/json/billing/upgrade",
+            "freetrial",
+            undefined,
+            [],
+            redirect_url,
+        );
+    });
+
+    $("#start-on-zulip-free-button").on("click", (e) => {
+        e.preventDefault();
+        window.location.replace("/");
+    });
+
     $("#invoice-button").on("click", (e) => {
         if (helpers.is_valid_input($("#invoiced_licenses")) === false) {
             return;

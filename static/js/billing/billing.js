@@ -34,6 +34,11 @@ exports.initialize = function () {
         ]);
         e.preventDefault();
     });
+
+    $("#free-trial-add-payment-method-button").on("click", (e) => {
+        e.preventDefault();
+        window.location.replace("/upgrade");
+    });
 };
 
 window.billing = exports;
