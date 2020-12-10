@@ -502,6 +502,19 @@ def process_initial_upgrade(user: UserProfile, licenses: int, automanage_license
     from zerver.lib.actions import do_change_plan_type
     do_change_plan_type(realm, Realm.STANDARD)
 
+def update_license_ledger_for_manual_plan(realm: Realm, plan: CustomerPlan,
+                                          new_license_count: int,
+                                          event_time: datetime) -> None:
+    new_plan, last_ledger_entry = make_end_of_cycle_updates_if_needed(plan, event_time)
+
+    assert(last_ledger_entry is not None and plan is not None)
+    assert(get_latest_seat_count(realm) <= new_license_count)
+
+    licenses = max(new_license_count, last_ledger_entry.licenses)
+    LicenseLedger.objects.create(
+        plan=plan, event_time=event_time, licenses=licenses,
+        licenses_at_next_renewal=new_license_count)
+
 def update_license_ledger_for_automanaged_plan(realm: Realm, plan: CustomerPlan,
                                                event_time: datetime) -> None:
     new_plan, last_ledger_entry = make_end_of_cycle_updates_if_needed(plan, event_time)
