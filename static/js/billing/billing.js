@@ -28,9 +28,14 @@ exports.initialize = function () {
     });
 
     $("#change-plan-status").on("click", (e) => {
-        helpers.create_ajax_request("/json/billing/plan/change", "planchange", undefined, [
-            "status",
-        ]);
+        helpers.create_ajax_request(
+            "/json/billing/plan",
+            "planchange",
+            undefined,
+            ["status"],
+            undefined,
+            "PATCH",
+        );
         e.preventDefault();
     });
 };

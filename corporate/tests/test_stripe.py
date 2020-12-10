@@ -1350,8 +1350,8 @@ class StripeTest(StripeTestCase):
         self.login_user(user)
         with patch("corporate.lib.stripe.timezone_now", return_value=self.now):
             self.local_upgrade(self.seat_count, True, CustomerPlan.ANNUAL, 'token')
-        response = self.client_post("/json/billing/plan/change",
-                                    {'status': CustomerPlan.DOWNGRADE_AT_END_OF_CYCLE})
+        response = self.client_patch("/json/billing/plan",
+                                     {'status': CustomerPlan.DOWNGRADE_AT_END_OF_CYCLE})
         self.assert_json_success(response)
 
         # Verify that we still write LicenseLedger rows during the remaining
@@ -1414,8 +1414,8 @@ class StripeTest(StripeTestCase):
         self.assertEqual(monthly_plan.automanage_licenses, True)
         self.assertEqual(monthly_plan.billing_schedule, CustomerPlan.MONTHLY)
 
-        response = self.client_post("/json/billing/plan/change",
-                                    {'status': CustomerPlan.SWITCH_TO_ANNUAL_AT_END_OF_CYCLE})
+        response = self.client_patch("/json/billing/plan",
+                                     {'status': CustomerPlan.SWITCH_TO_ANNUAL_AT_END_OF_CYCLE})
         self.assert_json_success(response)
         monthly_plan.refresh_from_db()
         self.assertEqual(monthly_plan.status, CustomerPlan.SWITCH_TO_ANNUAL_AT_END_OF_CYCLE)
@@ -1558,8 +1558,8 @@ class StripeTest(StripeTestCase):
         self.assertEqual(monthly_plan.automanage_licenses, False)
         self.assertEqual(monthly_plan.billing_schedule, CustomerPlan.MONTHLY)
 
-        response = self.client_post("/json/billing/plan/change",
-                                    {'status': CustomerPlan.SWITCH_TO_ANNUAL_AT_END_OF_CYCLE})
+        response = self.client_patch("/json/billing/plan",
+                                     {'status': CustomerPlan.SWITCH_TO_ANNUAL_AT_END_OF_CYCLE})
         self.assert_json_success(response)
         monthly_plan.refresh_from_db()
         self.assertEqual(monthly_plan.status, CustomerPlan.SWITCH_TO_ANNUAL_AT_END_OF_CYCLE)
@@ -1639,13 +1639,13 @@ class StripeTest(StripeTestCase):
         self.login_user(user)
         with patch("corporate.lib.stripe.timezone_now", return_value=self.now):
             self.local_upgrade(self.seat_count, True, CustomerPlan.ANNUAL, 'token')
-        response = self.client_post("/json/billing/plan/change",
-                                    {'status': CustomerPlan.DOWNGRADE_AT_END_OF_CYCLE})
+        response = self.client_patch("/json/billing/plan",
+                                     {'status': CustomerPlan.DOWNGRADE_AT_END_OF_CYCLE})
         self.assert_json_success(response)
         self.assertEqual(CustomerPlan.objects.first().status, CustomerPlan.DOWNGRADE_AT_END_OF_CYCLE)
 
-        response = self.client_post("/json/billing/plan/change",
-                                    {'status': CustomerPlan.ACTIVE})
+        response = self.client_patch("/json/billing/plan",
+                                     {'status': CustomerPlan.ACTIVE})
         self.assert_json_success(response)
         self.assertEqual(CustomerPlan.objects.first().status, CustomerPlan.ACTIVE)
 
@@ -1663,8 +1663,8 @@ class StripeTest(StripeTestCase):
         self.login_user(user)
         with patch("corporate.lib.stripe.timezone_now", return_value=self.now):
             self.local_upgrade(self.seat_count, True, CustomerPlan.ANNUAL, 'token')
-        self.client_post("/json/billing/plan/change",
-                         {'status': CustomerPlan.DOWNGRADE_AT_END_OF_CYCLE})
+        self.client_patch("/json/billing/plan",
+                          {'status': CustomerPlan.DOWNGRADE_AT_END_OF_CYCLE})
 
         plan = CustomerPlan.objects.first()
         self.assertIsNotNone(plan.next_invoice_date)
@@ -1697,7 +1697,7 @@ class StripeTest(StripeTestCase):
             self.assertEqual(last_ledger_entry.licenses_at_next_renewal, 21)
 
             self.login_user(user)
-            self.client_post("/json/billing/plan/change", {'status': CustomerPlan.ENDED})
+            self.client_patch("/json/billing/plan", {'status': CustomerPlan.ENDED})
 
             plan.refresh_from_db()
             self.assertEqual(get_realm('zulip').plan_type, Realm.LIMITED)
@@ -1728,8 +1728,8 @@ class StripeTest(StripeTestCase):
             self.local_upgrade(self.seat_count, True, CustomerPlan.ANNUAL, 'token')
 
         self.login_user(user)
-        self.client_post("/json/billing/plan/change",
-                         {'status': CustomerPlan.DOWNGRADE_AT_END_OF_CYCLE})
+        self.client_patch("/json/billing/plan",
+                          {'status': CustomerPlan.DOWNGRADE_AT_END_OF_CYCLE})
 
         with self.assertRaises(BillingError) as context:
             with patch("corporate.lib.stripe.timezone_now", return_value=self.now):
@@ -1756,6 +1756,14 @@ class StripeTest(StripeTestCase):
         old_plan = CustomerPlan.objects.all().order_by("id").first()
         self.assertEqual(old_plan.next_invoice_date, None)
         self.assertEqual(old_plan.status, CustomerPlan.ENDED)
+
+    def test_update_plan_without_any_params(self) -> None:
+        with patch("corporate.lib.stripe.timezone_now", return_value=self.now):
+            self.local_upgrade(self.seat_count, True, CustomerPlan.ANNUAL, 'token')
+
+        self.login_user(self.example_user("hamlet"))
+        response = self.client_patch("/json/billing/plan", {})
+        self.assert_json_error_contains(response, "Nothing to change")
 
     @patch("corporate.lib.stripe.billing_logger.info")
     def test_deactivate_realm(self, mock_: Mock) -> None:
@@ -1907,27 +1915,36 @@ class RequiresBillingAccessTest(ZulipTestCase):
         mocked2.assert_called_once()
 
     def test_who_cant_access_json_endpoints(self) -> None:
-        def verify_user_cant_access_endpoint(username: str, endpoint: str, request_data: Dict[str, str], error_message: str) -> None:
+        def verify_user_cant_access_endpoint(username: str, endpoint: str, method: str, request_data: Dict[str, str],
+                                             error_message: str) -> None:
+
             self.login_user(self.example_user(username))
-            response = self.client_post(endpoint, request_data)
+            if method == "POST":
+                response = self.client_post(endpoint, request_data)
+            elif method == "PATCH":
+                response = self.client_patch(endpoint, request_data)
+            else:
+                raise AssertionError("Invalid method")
             self.assert_json_error_contains(response, error_message)
 
-        verify_user_cant_access_endpoint("polonius", "/json/billing/upgrade",
+        verify_user_cant_access_endpoint("polonius", "/json/billing/upgrade", "POST",
                                          {'billing_modality': orjson.dumps("charge_automatically").decode(), 'schedule': orjson.dumps("annual").decode(),
                                           'signed_seat_count': orjson.dumps('signed count').decode(), 'salt': orjson.dumps('salt').decode()},
                                          "Must be an organization member")
 
-        verify_user_cant_access_endpoint("polonius", "/json/billing/sponsorship",
+        verify_user_cant_access_endpoint("polonius", "/json/billing/sponsorship", "POST",
                                          {'organization-type': orjson.dumps("event").decode(), 'description': orjson.dumps("event description").decode(),
                                           'website': orjson.dumps("example.com").decode()},
                                          "Must be an organization member")
 
         for username in ["cordelia", "iago"]:
             self.login_user(self.example_user(username))
-            verify_user_cant_access_endpoint(username, "/json/billing/sources/change", {'stripe_token': orjson.dumps('token').decode()},
+            verify_user_cant_access_endpoint(username, "/json/billing/sources/change", "POST",
+                                             {'stripe_token': orjson.dumps('token').decode()},
                                              "Must be a billing administrator or an organization owner")
 
-            verify_user_cant_access_endpoint(username, "/json/billing/plan/change",  {'status': orjson.dumps(1).decode()},
+            verify_user_cant_access_endpoint(username, "/json/billing/plan", "PATCH",
+                                             {'status': orjson.dumps(1).decode()},
                                              "Must be a billing administrator or an organization owner")
 
         # Make sure that we are testing all the JSON endpoints
