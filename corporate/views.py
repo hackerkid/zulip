@@ -311,8 +311,6 @@ def update_plan(request: HttpRequest, user: UserProfile,
     assert(plan is not None)  # for mypy
 
     if status is not None:
-        assert(status in [CustomerPlan.ACTIVE, CustomerPlan.DOWNGRADE_AT_END_OF_CYCLE,
-                          CustomerPlan.SWITCH_TO_ANNUAL_AT_END_OF_CYCLE, CustomerPlan.ENDED])
         if status == CustomerPlan.ACTIVE:
             assert(plan.status == CustomerPlan.DOWNGRADE_AT_END_OF_CYCLE)
             do_change_plan_status(plan, status)
@@ -327,6 +325,8 @@ def update_plan(request: HttpRequest, user: UserProfile,
         elif status == CustomerPlan.ENDED:
             assert(plan.status == CustomerPlan.FREE_TRIAL)
             downgrade_now_without_creating_additional_invoices(user.realm)
+        else:
+            return json_error(_("Invalid value for status"))
         return json_success()
 
     return json_error(_("Nothing to change."))
