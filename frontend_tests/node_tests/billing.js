@@ -33,10 +33,20 @@ run_test("initialize", () => {
     };
 
     let create_ajax_request_called = false;
-    helpers.create_ajax_request = (url, form_name, stripe_token) => {
+    helpers.create_ajax_request = (
+        url,
+        form_name,
+        stripe_token,
+        numeric_inputs,
+        redirect_to,
+        method,
+    ) => {
         assert.equal(url, "/json/billing/sources/change");
         assert.equal(form_name, "cardchange");
         assert.equal(stripe_token, "stripe_token");
+        assert.deepEqual(numeric_inputs, undefined);
+        assert.equal(redirect_to, undefined);
+        assert.equal(method, undefined);
         create_ajax_request_called = true;
     };
 
@@ -83,11 +93,20 @@ run_test("initialize", () => {
     assert(open_func_called);
 
     create_ajax_request_called = false;
-    helpers.create_ajax_request = (url, form_name, stripe_token, numeric_inputs) => {
-        assert.equal(url, "/json/billing/plan/change");
+    helpers.create_ajax_request = (
+        url,
+        form_name,
+        stripe_token,
+        numeric_inputs,
+        redirect_to,
+        method,
+    ) => {
+        assert.equal(url, "/json/billing/plan");
         assert.equal(form_name, "planchange");
         assert.equal(stripe_token, undefined);
         assert.deepEqual(numeric_inputs, ["status"]);
+        assert.equal(redirect_to, undefined);
+        assert.equal(method, "PATCH");
         create_ajax_request_called = true;
     };
 

@@ -6,6 +6,7 @@ exports.create_ajax_request = function (
     stripe_token = null,
     numeric_inputs = [],
     redirect_to = "/billing",
+    type = "POST",
 ) {
     const form = $("#" + form_name + "-form");
     const form_loading_indicator = "#" + form_name + "_loading_indicator";
@@ -40,7 +41,8 @@ exports.create_ajax_request = function (
         }
     }
 
-    $.post({
+    $.ajax({
+        type,
         url,
         data,
         success() {

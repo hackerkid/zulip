@@ -305,29 +305,31 @@ def billing_home(request: HttpRequest) -> HttpResponse:
 
 @require_billing_access
 @has_request_variables
-def change_plan_status(request: HttpRequest, user: UserProfile,
-                       status: int=REQ("status", validator=check_int)) -> HttpResponse:
-    assert(status in [CustomerPlan.ACTIVE, CustomerPlan.DOWNGRADE_AT_END_OF_CYCLE,
-                      CustomerPlan.SWITCH_TO_ANNUAL_AT_END_OF_CYCLE, CustomerPlan.ENDED])
-
+def update_plan(request: HttpRequest, user: UserProfile,
+                status: Optional[int]=REQ("status", validator=check_int, default=None)) -> HttpResponse:
     plan = get_current_plan_by_realm(user.realm)
     assert(plan is not None)  # for mypy
 
-    if status == CustomerPlan.ACTIVE:
-        assert(plan.status == CustomerPlan.DOWNGRADE_AT_END_OF_CYCLE)
-        do_change_plan_status(plan, status)
-    elif status == CustomerPlan.DOWNGRADE_AT_END_OF_CYCLE:
-        assert(plan.status == CustomerPlan.ACTIVE)
-        downgrade_at_the_end_of_billing_cycle(user.realm)
-    elif status == CustomerPlan.SWITCH_TO_ANNUAL_AT_END_OF_CYCLE:
-        assert(plan.billing_schedule == CustomerPlan.MONTHLY)
-        assert(plan.status == CustomerPlan.ACTIVE)
-        assert(plan.fixed_price is None)
-        do_change_plan_status(plan, status)
-    elif status == CustomerPlan.ENDED:
-        assert(plan.status == CustomerPlan.FREE_TRIAL)
-        downgrade_now_without_creating_additional_invoices(user.realm)
-    return json_success()
+    if status is not None:
+        assert(status in [CustomerPlan.ACTIVE, CustomerPlan.DOWNGRADE_AT_END_OF_CYCLE,
+                          CustomerPlan.SWITCH_TO_ANNUAL_AT_END_OF_CYCLE, CustomerPlan.ENDED])
+        if status == CustomerPlan.ACTIVE:
+            assert(plan.status == CustomerPlan.DOWNGRADE_AT_END_OF_CYCLE)
+            do_change_plan_status(plan, status)
+        elif status == CustomerPlan.DOWNGRADE_AT_END_OF_CYCLE:
+            assert(plan.status == CustomerPlan.ACTIVE)
+            downgrade_at_the_end_of_billing_cycle(user.realm)
+        elif status == CustomerPlan.SWITCH_TO_ANNUAL_AT_END_OF_CYCLE:
+            assert(plan.billing_schedule == CustomerPlan.MONTHLY)
+            assert(plan.status == CustomerPlan.ACTIVE)
+            assert(plan.fixed_price is None)
+            do_change_plan_status(plan, status)
+        elif status == CustomerPlan.ENDED:
+            assert(plan.status == CustomerPlan.FREE_TRIAL)
+            downgrade_now_without_creating_additional_invoices(user.realm)
+        return json_success()
+
+    return json_error(_("Nothing to change."))
 
 @require_billing_access
 @has_request_variables
