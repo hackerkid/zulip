@@ -300,6 +300,13 @@ def update_plan(request: HttpRequest, user: UserProfile,
     plan = get_current_plan_by_realm(user.realm)
     assert(plan is not None)  # for mypy
 
+    new_plan, last_ledger_entry = make_end_of_cycle_updates_if_needed(plan, timezone_now())
+    if new_plan is not None:
+        return json_error(_("Unable to update the plan. The plan has expired and replaced with a new plan."))
+
+    if last_ledger_entry is None:
+        return json_error(_("Unable to update the plan. The plan has ended."))
+
     if status is not None:
         if status == CustomerPlan.ACTIVE:
             assert(plan.status == CustomerPlan.DOWNGRADE_AT_END_OF_CYCLE)
