@@ -27,6 +27,51 @@ exports.initialize = function () {
         e.preventDefault();
     });
 
+    exports.create_update_license_request = function () {
+        helpers.create_ajax_request(
+            "/json/billing/plan",
+            "licensechange",
+            undefined,
+            ["licenses"],
+            ["licenses_at_next_renewal"],
+            undefined,
+            "PATCH",
+        );
+    };
+
+    $("#update-licenses-button").on("click", (e) => {
+        if (helpers.is_valid_input($("#new_licenses_input")) === false) {
+            return;
+        }
+        e.preventDefault();
+        const current_licenses = $("#licensechange-input-section").data("licenses");
+        const new_licenses = $("#new_licenses_input").val();
+        if (new_licenses > current_licenses) {
+            $("#new_license_count_holder").text(new_licenses);
+            $("#current_license_count_holder").text(current_licenses);
+            $("#confirm-licenses-modal").modal("show");
+        } else {
+            exports.create_update_license_request();
+        }
+    });
+
+    $("#confirm-license-update-button").on("click", () => {
+        exports.create_update_license_request();
+    });
+
+    $("#update-licenses-at-next-renewal-button").on("click", (e) => {
+        e.preventDefault();
+        helpers.create_ajax_request(
+            "/json/billing/plan",
+            "licensechange",
+            undefined,
+            ["licenses_at_next_renewal"],
+            ["licenses"],
+            undefined,
+            "PATCH",
+        );
+    });
+
     $("#change-plan-status").on("click", (e) => {
         helpers.create_ajax_request(
             "/json/billing/plan",
