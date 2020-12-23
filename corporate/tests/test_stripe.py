@@ -318,7 +318,7 @@ class StripeTestCase(ZulipTestCase):
         if invoice:  # send_invoice
             params.update(
                 billing_modality='send_invoice',
-                licenses=123,
+                licenses=kwargs.get('licenses', 123),
             )
         else:  # charge_automatically
             stripe_token = None
@@ -1768,6 +1768,85 @@ class StripeTest(StripeTestCase):
         old_plan = CustomerPlan.objects.all().order_by("id").first()
         self.assertEqual(old_plan.next_invoice_date, None)
         self.assertEqual(old_plan.status, CustomerPlan.ENDED)
+
+    @mock_stripe()
+    def test_update_licenses_of_manual_plan_from_billing_page(self, *mocks: Mock) -> None:
+        user = self.example_user("hamlet")
+        self.login_user(user)
+
+        with patch('corporate.lib.stripe.timezone_now', return_value=self.now):
+            self.upgrade(invoice=True, licenses=100)
+
+        with patch('corporate.views.timezone_now', return_value=self.now):
+            result = self.client_patch("/json/billing/plan", {"licenses": 100})
+            self.assert_json_error_contains(result, "Your plan is already on 100 licenses.")
+
+        with patch('corporate.views.timezone_now', return_value=self.now):
+            result = self.client_patch("/json/billing/plan", {"licenses": 25})
+            self.assert_json_error_contains(result, "You must invoice for at least 30 users.")
+
+        with patch('corporate.views.timezone_now', return_value=self.now):
+            result = self.client_patch("/json/billing/plan", {"licenses": 150})
+            self.assert_json_success(result)
+        invoice_plans_as_needed(self.next_year)
+        stripe_customer = stripe_get_customer(Customer.objects.get(realm=user.realm).stripe_customer_id)
+        [invoice, _] = stripe.Invoice.list(customer=stripe_customer.id)
+        invoice_params = {
+            'amount_due': (8000 * 150 + 8000 * 50), 'amount_paid': 0, 'attempt_count': 0,
+            'auto_advance': True, 'billing': 'send_invoice', 'statement_descriptor': 'Zulip Standard',
+            'status': 'open', 'total': (8000 * 150 + 8000 * 50)}
+        for key, value in invoice_params.items():
+            self.assertEqual(invoice.get(key), value)
+        [renewal_item, extra_license_item] = invoice.lines
+        line_item_params = {
+            'amount': 8000 * 150, 'description': 'Zulip Standard - renewal', 'discountable': False,
+            'period': {
+                'end': datetime_to_timestamp(self.next_year + timedelta(days=365)),
+                'start': datetime_to_timestamp(self.next_year)},
+            'plan': None, 'proration': False, 'quantity': 150}
+        for key, value in line_item_params.items():
+            self.assertEqual(renewal_item.get(key), value)
+        line_item_params = {
+            'amount': 8000 * 50, 'description': 'Additional license (Jan 2, 2012 - Jan 2, 2013)', 'discountable': False,
+            'period': {
+                'end': datetime_to_timestamp(self.next_year),
+                'start': datetime_to_timestamp(self.now)},
+            'plan': None, 'proration': False, 'quantity': 50}
+        for key, value in line_item_params.items():
+            self.assertEqual(extra_license_item.get(key), value)
+
+        with patch('corporate.views.timezone_now', return_value=self.next_year):
+            result = self.client_patch("/json/billing/plan", {"licenses": 120})
+            self.assert_json_success(result)
+        invoice_plans_as_needed(self.next_year + timedelta(days=365))
+        stripe_customer = stripe_get_customer(Customer.objects.get(realm=user.realm).stripe_customer_id)
+        [invoice, _, _] = stripe.Invoice.list(customer=stripe_customer.id)
+        invoice_params = {
+            'amount_due': 8000 * 120, 'amount_paid': 0, 'attempt_count': 0,
+            'auto_advance': True, 'billing': 'send_invoice', 'statement_descriptor': 'Zulip Standard',
+            'status': 'open', 'total': 8000 * 120}
+        for key, value in invoice_params.items():
+            self.assertEqual(invoice.get(key), value)
+        [renewal_item] = invoice.lines
+        line_item_params = {
+            'amount': 8000 * 120, 'description': 'Zulip Standard - renewal', 'discountable': False,
+            'period': {
+                'end': datetime_to_timestamp(self.next_year + timedelta(days=2*365)),
+                'start': datetime_to_timestamp(self.next_year + timedelta(days=365))},
+            'plan': None, 'proration': False, 'quantity': 120}
+        for key, value in line_item_params.items():
+            self.assertEqual(renewal_item.get(key), value)
+
+    def test_update_licenses_of_automatic_plan_from_billing_page(self, *mocks: Mock) -> None:
+        user = self.example_user("hamlet")
+        self.login_user(user)
+
+        with patch('corporate.lib.stripe.timezone_now', return_value=self.now):
+            self.local_upgrade(self.seat_count, True, CustomerPlan.ANNUAL, 'token')
+
+        with patch('corporate.views.timezone_now', return_value=self.now):
+            result = self.client_patch("/json/billing/plan", {"licenses": 100})
+            self.assert_json_error_contains(result, "Your plan is on automatic license management.")
 
     def test_update_plan_with_invalid_status(self) -> None:
         with patch("corporate.lib.stripe.timezone_now", return_value=self.now):

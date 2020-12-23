@@ -27,6 +27,34 @@ exports.initialize = function () {
         e.preventDefault();
     });
 
+    function create_update_license_request() {
+        helpers.create_ajax_request(
+            "/json/billing/plan",
+            "licensechange",
+            undefined,
+            ["licenses"],
+            undefined,
+            "PATCH",
+        );
+    }
+
+    $("#update-licenses-button").on("click", (e) => {
+        const current_licenses = $("#licensechange-input-section").data("licenses");
+        const new_licenses = $("#new_license_count_input").val();
+        if (new_licenses > current_licenses) {
+            $("#new_license_count_holder").text(new_licenses);
+            $("#current_license_count_holder").text(current_licenses);
+            $("#confirm-licenses-modal").modal("show");
+        } else {
+            create_update_license_request();
+        }
+        e.preventDefault();
+    });
+
+    $("#confirm-license-update-button").on("click", () => {
+        create_update_license_request();
+    });
+
     $("#change-plan-status").on("click", (e) => {
         helpers.create_ajax_request(
             "/json/billing/plan",
