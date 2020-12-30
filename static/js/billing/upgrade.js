@@ -50,6 +50,7 @@ exports.initialize = () => {
             "sponsorship",
             undefined,
             undefined,
+            undefined,
             "/",
         );
     });

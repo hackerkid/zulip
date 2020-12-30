@@ -5,6 +5,7 @@ exports.create_ajax_request = function (
     form_name,
     stripe_token = null,
     numeric_inputs = [],
+    ignored_inputs = [],
     redirect_to = "/billing",
     type = "POST",
 ) {
@@ -34,6 +35,9 @@ exports.create_ajax_request = function (
     }
 
     for (const item of form.serializeArray()) {
+        if (ignored_inputs.includes(item.name)) {
+            return;
+        }
         if (numeric_inputs.includes(item.name)) {
             data[item.name] = item.value;
         } else {

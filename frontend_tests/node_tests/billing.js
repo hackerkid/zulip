@@ -38,6 +38,7 @@ run_test("initialize", () => {
         form_name,
         stripe_token,
         numeric_inputs,
+        ignored_inputs,
         redirect_to,
         method,
     ) => {
@@ -45,6 +46,7 @@ run_test("initialize", () => {
         assert.equal(form_name, "cardchange");
         assert.equal(stripe_token, "stripe_token");
         assert.deepEqual(numeric_inputs, undefined);
+        assert.deepEqual(ignored_inputs, undefined);
         assert.equal(redirect_to, undefined);
         assert.equal(method, undefined);
         create_ajax_request_called = true;
@@ -98,6 +100,7 @@ run_test("initialize", () => {
         form_name,
         stripe_token,
         numeric_inputs,
+        ignored_inputs,
         redirect_to,
         method,
     ) => {
@@ -105,6 +108,7 @@ run_test("initialize", () => {
         assert.equal(form_name, "planchange");
         assert.equal(stripe_token, undefined);
         assert.deepEqual(numeric_inputs, ["status"]);
+        assert.deepEqual(ignored_inputs, undefined);
         assert.equal(redirect_to, undefined);
         assert.equal(method, "PATCH");
         create_ajax_request_called = true;

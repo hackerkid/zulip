@@ -34,6 +34,7 @@ exports.initialize = function () {
             undefined,
             ["status"],
             undefined,
+            undefined,
             "PATCH",
         );
         e.preventDefault();
