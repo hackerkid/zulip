@@ -502,6 +502,25 @@ def process_initial_upgrade(user: UserProfile, licenses: int, automanage_license
     from zerver.lib.actions import do_change_plan_type
     do_change_plan_type(realm, Realm.STANDARD)
 
+def update_license_ledger_for_manual_plan(plan: CustomerPlan,
+                                          event_time: datetime,
+                                          licenses: Optional[int]=None,
+                                          licenses_at_next_renewal: Optional[int]=None,
+                                          ) -> None:
+    if licenses is not None:
+        assert(get_latest_seat_count(plan.customer.realm) <= licenses)
+        assert(licenses > plan.licenses())
+        LicenseLedger.objects.create(
+            plan=plan, event_time=event_time, licenses=licenses,
+            licenses_at_next_renewal=licenses)
+    elif licenses_at_next_renewal is not None:
+        assert(get_latest_seat_count(plan.customer.realm) <= licenses_at_next_renewal)
+        LicenseLedger.objects.create(
+            plan=plan, event_time=event_time, licenses=plan.licenses(),
+            licenses_at_next_renewal=licenses_at_next_renewal)
+    else:
+        raise AssertionError("Pass licenses or licenses_at_next_renewal")
+
 def update_license_ledger_for_automanaged_plan(realm: Realm, plan: CustomerPlan,
                                                event_time: datetime) -> None:
     new_plan, last_ledger_entry = make_end_of_cycle_updates_if_needed(plan, event_time)
