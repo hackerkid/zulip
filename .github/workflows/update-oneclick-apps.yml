@@ -1,0 +1,25 @@
+name: Update one click apps
+on: [published]
+jobs:
+  update-digitalocean-oneclick-app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Update Digital Ocean one click app
+        env:
+          DIGITALOCEAN_API_KEY: ${{ secrets.DIGITALOCEAN_API_KEY }}
+          ZULIP_API_KEY: ${{ secrets.ZULIP_API_KEY }}
+          ZULIP_EMAIL: ${{ secrets.ZULIP_EMAIL }}
+          ZULIP_SITE: ${{ secrets.ZULIP_SITE }}
+          ZULIP_STREAM: ${{ secrets.ZULIP_STREAM }}
+          PYTHON_DIGITALOCEAN_REQUEST_TIMEOUT_SEC: 30
+          RELEASE_VERSION: ${{ github.event.release.tag_name }}
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          git clone https://github.com/hackerkid/marketplace-partners
+          cd marketplace-partners
+          git checkout disable-dpg-update-prompts
+          cd ..
+          pip3 install python-digitalocean zulip requests fab-classic
+          echo $PATH
+          python3 tools/oneclickapps/prepare_digital_ocean_one_click_app_release.py
