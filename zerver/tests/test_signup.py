@@ -28,6 +28,7 @@ from confirmation.models import (
     get_object_from_key,
     one_click_unsubscribe_link,
 )
+from corporate.models import Customer, CustomerPlan, LicenseLedger
 from zerver.context_processors import common_context
 from zerver.decorator import do_two_factor_login
 from zerver.forms import HomepageForm, check_subdomain_available
@@ -681,7 +682,7 @@ class LoginTest(ZulipTestCase):
         with queries_captured() as queries, cache_tries_captured() as cache_tries:
             self.register(self.nonreg_email('test'), "test")
         # Ensure the number of queries we make is not O(streams)
-        self.assertEqual(len(queries), 70)
+        self.assertEqual(len(queries), 71)
 
         # We can probably avoid a couple cache hits here, but there doesn't
         # seem to be any O(N) behavior.  Some of the cache hits are related
@@ -992,6 +993,42 @@ class InviteUserTest(InviteUserBase):
             result = self.invite(invitees, [stream_name])
 
         self.assert_json_success(result)
+
+    def test_invite_user_to_realm_on_manual_license_plan(self) -> None:
+        self.login_user(self.example_user("hamlet"))
+        customer = Customer.objects.create(realm=get_realm("zulip"))
+        plan = CustomerPlan.objects.create(
+            customer=customer,
+            automanage_licenses=False,
+            billing_cycle_anchor=timezone_now(),
+            billing_schedule=CustomerPlan.MONTHLY,
+            tier=CustomerPlan.STANDARD
+        )
+        ledger = LicenseLedger.objects.create(
+            plan=plan,
+            is_renewal=True,
+            event_time=timezone_now(),
+            licenses=50,
+            licenses_at_next_renewal=50
+        )
+        with self.settings(BILLING_ENABLED=True):
+            result = self.invite(self.nonreg_email('alice'), ["Denmark"])
+        self.assert_json_success(result)
+
+        ledger.licenses_at_next_renewal = 5
+        ledger.save(update_fields=["licenses_at_next_renewal"])
+        with self.settings(BILLING_ENABLED=True):
+            result = self.invite(self.nonreg_email('bob'), ["Denmark"])
+        self.assert_json_success(result)
+
+        ledger.licenses = 5
+        ledger.save(update_fields=["licenses"])
+        with self.settings(BILLING_ENABLED=True):
+            result = self.invite(self.nonreg_email('bob'), ["Denmark"])
+        self.assert_json_error_contains(
+            result,
+            "Your organization is using all the licenses. Please increase the number"
+        )
 
     def test_cross_realm_bot(self) -> None:
         inviter = self.example_user('hamlet')
@@ -3251,6 +3288,47 @@ class UserSignUpTest(InviteUserBase):
              'full_name': "New User",
              'from_confirmation': '1'},  subdomain="zephyr")
         self.assert_in_success_response(["We couldn't find your confirmation link"], result)
+
+    def test_signup_to_realm_on_manual_license_plan(self) -> None:
+        realm = get_realm("zulip")
+        denmark_stream = get_stream("Denmark", realm)
+        realm.signup_notifications_stream = denmark_stream
+        realm.save(update_fields=["signup_notifications_stream"])
+
+        customer = Customer.objects.create(realm=realm)
+        plan = CustomerPlan.objects.create(
+            customer=customer,
+            automanage_licenses=False,
+            billing_cycle_anchor=timezone_now(),
+            billing_schedule=CustomerPlan.MONTHLY,
+            tier=CustomerPlan.STANDARD
+        )
+        ledger = LicenseLedger.objects.create(
+            plan=plan,
+            is_renewal=True,
+            event_time=timezone_now(),
+            licenses=5,
+            licenses_at_next_renewal=5
+        )
+
+        with self.settings(BILLING_ENABLED=True):
+            form = HomepageForm({'email': self.nonreg_email('test')}, realm=realm)
+            self.assertIn("The organization is using all it's licenses and can't accept new members.", form.errors['email'][0])
+            last_message = Message.objects.last()
+            self.assertIn(f"Signup of {self.nonreg_email('test')} failed because of license limit.", last_message.content)
+            self.assertEqual(last_message.recipient.type_id, denmark_stream.id)
+
+        ledger.licenses_at_next_renewal = 50
+        ledger.save(update_fields=["licenses_at_next_renewal"])
+        with self.settings(BILLING_ENABLED=True):
+            form = HomepageForm({'email': self.nonreg_email('test')}, realm=realm)
+            self.assertIn("The organization is using all it's licenses and can't accept new members.", form.errors['email'][0])
+
+        ledger.licenses = 50
+        ledger.save(update_fields=["licenses"])
+        with self.settings(BILLING_ENABLED=True):
+            form = HomepageForm({'email': self.nonreg_email('test')}, realm=realm)
+            self.assertEqual(form.errors, {})
 
     def test_failed_signup_due_to_restricted_domain(self) -> None:
         realm = get_realm('zulip')

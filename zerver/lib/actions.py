@@ -239,6 +239,8 @@ from zerver.tornado.django_api import send_event
 
 if settings.BILLING_ENABLED:
     from corporate.lib.stripe import (
+        LicenseLimitError,
+        check_license_limit,
         downgrade_now_without_creating_additional_invoices,
         update_license_ledger_if_needed,
     )
@@ -5360,6 +5362,15 @@ def do_invite_users(user_profile: UserProfile,
                     invite_as: int=PreregistrationUser.INVITE_AS['MEMBER']) -> None:
 
     check_invite_limit(user_profile.realm, len(invitee_emails))
+    if settings.BILLING_ENABLED:
+        try:
+            check_license_limit(user_profile.realm)
+        except LicenseLimitError:
+            error_message = _(
+                "Your organization is using all the licenses. Please increase the number of "
+                "licenses to add more users."
+            )
+            raise InvitationError(error_message, [], sent_invitations=False)
 
     realm = user_profile.realm
     if not realm.invite_required:

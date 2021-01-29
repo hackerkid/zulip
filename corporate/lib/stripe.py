@@ -170,6 +170,9 @@ class BillingError(Exception):
             message = BillingError.CONTACT_SUPPORT.format(email=settings.ZULIP_ADMINISTRATOR)
         self.message = message
 
+class LicenseLimitError(Exception):
+    pass
+
 class StripeCardError(BillingError):
     pass
 
@@ -723,3 +726,10 @@ def update_billing_method_of_current_plan(realm: Realm, charge_automatically: bo
     if plan is not None:
         plan.charge_automatically = charge_automatically
         plan.save(update_fields=["charge_automatically"])
+
+def check_license_limit(realm: Realm) -> None:
+    plan = get_current_plan_by_realm(realm)
+    if plan is None or plan.automanage_licenses:
+        return
+    if plan.licenses() <= get_latest_seat_count(realm):
+        raise LicenseLimitError()

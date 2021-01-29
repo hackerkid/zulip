@@ -18,7 +18,11 @@ from jinja2 import Markup as mark_safe
 from two_factor.forms import AuthenticationTokenForm as TwoFactorAuthenticationTokenForm
 from two_factor.utils import totp_digits
 
-from zerver.lib.actions import do_change_password, email_not_system_bot
+from zerver.lib.actions import (
+    do_change_password,
+    email_not_system_bot,
+    send_message_to_signup_notification_stream,
+)
 from zerver.lib.email_validation import email_allowed_for_realm
 from zerver.lib.name_restrictions import is_disposable_domain, is_reserved_subdomain
 from zerver.lib.rate_limiter import RateLimited, RateLimitedObject
@@ -34,9 +38,13 @@ from zerver.models import (
     UserProfile,
     email_to_domain,
     get_realm,
+    get_system_bot,
     get_user_by_delivery_email,
 )
 from zproject.backends import check_password_strength, email_auth_enabled, email_belongs_to_ldap
+
+if settings.BILLING_ENABLED:
+    from corporate.lib.stripe import LicenseLimitError, check_license_limit
 
 MIT_VALIDATION_ERROR = 'That user does not exist at MIT or is a ' + \
                        '<a href="https://ist.mit.edu/email-lists">mailing list</a>. ' + \
@@ -179,6 +187,14 @@ class HomepageForm(forms.Form):
 
         if realm.is_zephyr_mirror_realm:
             email_is_not_mit_mailing_list(email)
+
+        if settings.BILLING_ENABLED:
+            try:
+                check_license_limit(realm)
+            except LicenseLimitError:
+                message = f"Signup of {email} failed because of license limit. Please increase the licenses."
+                send_message_to_signup_notification_stream(get_system_bot(settings.NOTIFICATION_BOT), realm, message)
+                raise ValidationError(_("The organization is using all it's licenses and can't accept new members. Please contact the organization admin."))
 
         return email
 
